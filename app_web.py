@@ -17,7 +17,6 @@ TEMPLATE = """
 <head>
     <title>Conversor de Monedas</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <!-- Choices.js CDN para selects con banderas -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/choices.js/public/assets/styles/choices.min.css"/>
     <style>
         body { 
@@ -37,21 +36,6 @@ TEMPLATE = """
             box-shadow: 0 4px 24px rgba(44, 62, 80, 0.12);
             transition: background 0.5s, color 0.5s;
             position: relative;
-        }
-        .modo-oscuro-btn {
-            position: absolute;
-            top: 18px;
-            right: 18px;
-            background: none;
-            border: none;
-            font-size: 1.7em;
-            cursor: pointer;
-            outline: none;
-            z-index: 10;
-            transition: color 0.2s;
-        }
-        .modo-oscuro-btn:hover {
-            color: #40739e;
         }
         h2 {
             color: #273c75;
@@ -143,40 +127,6 @@ TEMPLATE = """
             text-align: center;
             animation: fadein 0.7s;
         }
-        .dark-mode body {
-            background: #23272f !important;
-        }
-        .dark-mode .container {
-            background: rgba(30,34,40,0.97) !important;
-            color: #f5f6fa !important;
-        }
-        .dark-mode h2, .dark-mode label {
-            color: #f5f6fa !important;
-        }
-        .dark-mode input, .dark-mode select {
-            background: #23272f !important;
-            color: #f5f6fa !important;
-            border: 1px solid #353b48 !important;
-        }
-        .dark-mode .resultado {
-            background: #353b48 !important;
-            color: #f5f6fa !important;
-            border: 1px solid #23272f !important;
-        }
-        .dark-mode .error {
-            background: #2d3436 !important;
-            color: #fab1a0 !important;
-            border: 1px solid #d63031 !important;
-        }
-        .dark-mode button, .dark-mode .invertir-btn {
-            background: #353b48 !important;
-            color: #f5f6fa !important;
-            border: 2px solid #636e72 !important;
-        }
-        .dark-mode button:hover, .dark-mode .invertir-btn:hover {
-            background: #636e72 !important;
-            color: #fff !important;
-        }
         .historial {
             margin-top: 30px;
             background: #f1f2f6;
@@ -187,19 +137,13 @@ TEMPLATE = """
             max-height: 120px;
             overflow-y: auto;
         }
-        .dark-mode .historial {
-            background: #23272f !important;
-            color: #b2bec3 !important;
-        }
         @media (max-width: 500px) {
             .container { padding: 15px; }
-            .modo-oscuro-btn { top: 8px; right: 8px; font-size: 1.3em;}
         }
     </style>
 </head>
 <body>
     <div class="container" id="main-container">
-        <button type="button" class="modo-oscuro-btn" id="modo-oscuro" title="Modo oscuro/claro">🌙</button>
         <h2>Conversor de Monedas</h2>
         <button type="button" class="invertir-btn" id="invertir" title="Invertir monedas">&#8646;</button>
         <form method="post" id="formulario">
@@ -280,14 +224,6 @@ TEMPLATE = """
             destino.value = temp;
             choices1.setChoiceByValue(origen.value);
             choices2.setChoiceByValue(destino.value);
-        };
-
-        // Modo oscuro/claro
-        document.getElementById('modo-oscuro').onclick = function() {
-            document.body.classList.toggle('dark-mode');
-            document.getElementById('main-container').classList.toggle('dark-mode');
-            // Cambia el icono según el modo
-            this.textContent = document.body.classList.contains('dark-mode') ? '☀️' : '🌙';
         };
 
         // Validación visual de errores
