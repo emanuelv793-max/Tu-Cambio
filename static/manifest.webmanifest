@@ -1,0 +1,24 @@
+{
+  "name": "Conversor de Monedas",
+  "short_name": "Conversor",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f6f8fb",
+  "theme_color": "#2563eb",
+  "description": "Convierte monedas con tasas actualizadas.",
+  "icons": [
+    {
+      "src": "https://tse1.mm.bing.net/th/id/OIP.I8yfqQYuyKi6q4pkfVP-IQHaEr?rs=1&pid=ImgDetMain&o=7&rm=3",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "https://tse1.mm.bing.net/th/id/OIP.I8yfqQYuyKi6q4pkfVP-IQHaEr?rs=1&pid=ImgDetMain&o=7&rm=3",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}
