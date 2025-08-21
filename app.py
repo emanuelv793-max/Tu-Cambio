@@ -351,7 +351,7 @@ TEMPLATE = """
 </head>
 <body>
     <div class="container">
-        <h1>Conversor Nueva Interfaz</h1>
+        <h1>Tu Cambio</h1>
         <form id="conversion-form">
             <label for="cantidad">Cantidad:</label>
             <input type="number" id="cantidad" value="1" step="0.01" required>
@@ -378,18 +378,16 @@ TEMPLATE = """
             <p id="tasa-texto"></p>
         </div>
 
-        <!-- Bloque ADSENSE -->
-        <div style="margin:22px 0;text-align:center;">
-            <!-- Google AdSense (DEMO, reemplaza ca-pub-XXX por tu ID real) -->
-            <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-xxxxxxxxxxxxxxxx"
-                crossorigin="anonymous"></script>
+        <!-- Google AdSense (tu código): -->
+        <div style="margin: 16px 0; text-align: center;">
+            <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-4347223649983931" crossorigin="anonymous"></script>
             <ins class="adsbygoogle"
-                style="display:block; text-align:center; min-height:100px; background: #f6f9fa; border-radius: 8px;"
-                data-ad-client="ca-pub-xxxxxxxxxxxxxxxx"
-                data-ad-slot="1234567890"
-                data-ad-format="auto"></ins>
+                 style="display:block; min-height:100px; text-align:center; background:rgba(249,249,249,0.18); border-radius:14px;"
+                 data-ad-client="ca-pub-4347223649983931"
+                 data-ad-slot="1234567890"
+                 data-ad-format="auto"></ins>
             <script>
-                (adsbygoogle = window.adsbygoogle || []).push({});
+                 (adsbygoogle = window.adsbygoogle || []).push({});
             </script>
         </div>
 
