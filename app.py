@@ -351,7 +351,7 @@ TEMPLATE = """
 </head>
 <body>
     <div class="container">
-        <h1>Conversor de Monedas</h1>
+        <h1>Conversor Nueva Interfaz</h1>
         <form id="conversion-form">
             <label for="cantidad">Cantidad:</label>
             <input type="number" id="cantidad" value="1" step="0.01" required>
