@@ -29,6 +29,7 @@ TEMPLATE = """
 <html>
 <head>
     <title>Conversor de Monedas</title>
+    <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-4347223649983931" crossorigin="anonymous"></script>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/choices.js/public/assets/styles/choices.min.css"/>
     <style>
@@ -41,14 +42,40 @@ TEMPLATE = """
             transition: background 0.5s;
         }
         .container {
-            background: rgba(255,255,255,0.92);
+            background: rgba(255,255,255,0.32);
             max-width: 400px;
             margin: 60px auto;
             padding: 30px 30px 20px 30px;
-            border-radius: 15px;
-            box-shadow: 0 4px 24px rgba(44, 62, 80, 0.12);
+            border-radius: 24px;
+            box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.15), 0 1.5px 8px #bcc2f5;
+            border: 1.5px solid rgba(255,255,255,0.38);
+            backdrop-filter: blur(16px) saturate(180%);
+            -webkit-backdrop-filter: blur(16px) saturate(180%);
             transition: background 0.5s, color 0.5s;
             position: relative;
+        }
+        .resultado {
+            background: rgba(255,255,255,0.16);
+            color: #130f40;
+            border-radius: 18px;
+            padding: 20px 14px;
+            margin-top: 22px;
+            text-align: center;
+            font-size: 1.14em;
+            border: 1.5px solid rgba(255,255,255,0.26);
+            box-shadow: 0 4px 18px 0 rgba(31, 38, 135, 0.08);
+            animation: fadein 0.7s;
+            backdrop-filter: blur(16px) saturate(180%);
+            -webkit-backdrop-filter: blur(16px) saturate(180%);
+            /* Para glass: sin doble border ni color sólido extra al fondo */
+        }
+        /* Nunca dejar fondo ni min-height ni padding en #resultado-container si está vacío */
+        #resultado-container:empty { min-height: 0 !important; padding: 0 !important; background: none !important; border: none !important; }
+        
+        /* Elimina el espacio del bloque ads vacío */
+        #adsense, .adsense {
+            display:none !important;
+            height:0 !important;
         }
         h2 {
             color: #273c75;
@@ -216,7 +243,7 @@ TEMPLATE = """
             <label>Cantidad:</label>
             <input type="text" name="cantidad" id="cantidad" value="1" required>
         </form>
-        <div id="resultado-container"></div>
+        <div id="resultado-container" style="min-height:0;"></div>
         <div id="loading">Cargando...</div>
         {% if historial %}
             <div class="historial">
