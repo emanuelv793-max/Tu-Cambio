@@ -88,12 +88,22 @@
 
     input[type="text"], select { width: 100%; padding: 12px 12px; border: 1px solid #e5e7eb; border-radius: 10px; background: transparent; color: var(--text); }
     .choices__inner { border-radius: 10px; }
+    /* Asegurar legibilidad también en modo claro */
+    .choices__list--single .choices__item { color: var(--text); }
+    .choices__list--dropdown .choices__item { color: var(--text); background: var(--panel); }
 
     /* Modo oscuro: mejorar legibilidad en Choices.js */
     [data-theme="dark"] .choices__inner {
       background: #0f172a;
       color: var(--text);
       border-color: #334155;
+    }
+    [data-theme="dark"] .choices__list--single .choices__item {
+      color: var(--text) !important; /* texto de la moneda seleccionada */
+    }
+    [data-theme="dark"] .choices__list--single .choices__placeholder {
+      color: var(--muted) !important;
+      opacity: .9;
     }
     [data-theme="dark"] .choices__list--dropdown,
     [data-theme="dark"] .choices__list[aria-expanded] {
@@ -155,7 +165,7 @@
         <label for="moneda_origen">Convertir de</label>
         <select id="moneda_origen" name="moneda_origen" required>
           {% for m in monedas %}
-          <option value="{{ m.codigo }}" data-custom-properties='<img src="{{ m.bandera }}" class="flag">' {% if m.codigo == 'EUR' %}selected{% endif %}>{{ m.nombre }}</option>
+          <option value="{{ m.codigo }}" data-custom-properties='<img src="{{ m.bandera }}" class="flag">' data-nombre="{{ m.nombre }}" data-bandera="{{ m.bandera }}" {% if m.codigo == 'EUR' %}selected{% endif %}>{{ m.nombre }}</option>
           {% endfor %}
         </select>
       </div>
@@ -164,7 +174,7 @@
         <label for="moneda_destino">a</label>
         <select id="moneda_destino" name="moneda_destino" required>
           {% for m in monedas %}
-          <option value="{{ m.codigo }}" data-custom-properties='<img src="{{ m.bandera }}" class="flag">' {% if m.codigo == 'USD' %}selected{% endif %}>{{ m.nombre }}</option>
+          <option value="{{ m.codigo }}" data-custom-properties='<img src="{{ m.bandera }}" class="flag">' data-nombre="{{ m.nombre }}" data-bandera="{{ m.bandera }}" {% if m.codigo == 'USD' %}selected{% endif %}>{{ m.nombre }}</option>
           {% endfor %}
         </select>
       </div>
@@ -219,19 +229,37 @@
     })();
 
     // Choices.js para selects con banderas
-    const ch1 = new Choices('#moneda_origen', { searchEnabled: true, itemSelectText: '', allowHTML: true, shouldSort: false });
-    const ch2 = new Choices('#moneda_destino', { searchEnabled: true, itemSelectText: '', allowHTML: true, shouldSort: false });
+    let ch1 = null, ch2 = null;
+    try {
+      ch1 = new Choices('#moneda_origen', { searchEnabled: true, itemSelectText: '', allowHTML: true, shouldSort: false });
+      ch2 = new Choices('#moneda_destino', { searchEnabled: true, itemSelectText: '', allowHTML: true, shouldSort: false });
+    } catch (e) {
+      console.warn('Choices.js no se pudo inicializar, usando selects nativos', e);
+    }
 
-    // Obtener lista de monedas en JS
-    const MONEDAS = {{ monedas | tojson }};
-    const byCode = code => MONEDAS.find(m => m.codigo === code);
+    // Obtener datos de la opción seleccionada (sin depender de variables JS)
+    function getSelectedData(selectId){
+      const sel = document.getElementById(selectId);
+      const opt = sel.options[sel.selectedIndex];
+      return {
+        nombre: (opt && opt.dataset && opt.dataset.nombre) ? opt.dataset.nombre : sel.value,
+        bandera: (opt && opt.dataset && opt.dataset.bandera) ? opt.dataset.bandera : ''
+      };
+    }
 
     // Invertir monedas
     document.getElementById('invertir').addEventListener('click', () => {
       const a = document.getElementById('moneda_origen').value;
       const b = document.getElementById('moneda_destino').value;
-      ch1.setChoiceByValue(b);
-      ch2.setChoiceByValue(a);
+      if (ch1 && ch2) {
+        ch1.setChoiceByValue(b);
+        ch2.setChoiceByValue(a);
+      } else {
+        // Fallback: intercambiar valores en selects nativos
+        const selA = document.getElementById('moneda_origen');
+        const selB = document.getElementById('moneda_destino');
+        const tmp = selA.value; selA.value = selB.value; selB.value = tmp;
+      }
       triggerConvert();
     });
 
@@ -277,8 +305,8 @@
           renderError(data.error);
           return;
         }
-        const mo = byCode(origen) || { nombre: origen, bandera: '' };
-        const md = byCode(destino) || { nombre: destino, bandera: '' };
+        const mo = getSelectedData('moneda_origen');
+        const md = getSelectedData('moneda_destino');
         renderOk(`
           <strong>Resultado</strong><br>
           <img src="${mo.bandera}" class="flag" alt=""> ${data.cantidad} ${mo.nombre}

@@ -1,7 +1,7 @@
 import sqlite3
-from datetime import datetime
 
 def init_db():
+    """Inicializa la base de datos de historial."""
     conn = sqlite3.connect('historial.db')
     cursor = conn.cursor()
     cursor.execute('''
@@ -19,6 +19,7 @@ def init_db():
     conn.close()
 
 def guardar_conversion(cantidad, moneda_origen, moneda_destino, resultado, tasa):
+    """Guarda una conversión en la base de datos."""
     conn = sqlite3.connect('historial.db')
     cursor = conn.cursor()
     cursor.execute('''
@@ -28,7 +29,8 @@ def guardar_conversion(cantidad, moneda_origen, moneda_destino, resultado, tasa)
     conn.commit()
     conn.close()
 
-def obtener_historial(limite=5):
+def obtener_historial(limite=10):
+    """Obtiene el historial de conversiones."""
     conn = sqlite3.connect('historial.db')
     cursor = conn.cursor()
     cursor.execute('SELECT * FROM historial ORDER BY fecha DESC LIMIT ?', (limite,))
