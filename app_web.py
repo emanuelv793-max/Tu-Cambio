@@ -342,7 +342,7 @@ historial_global = []
 
 def obtener_tasa(base, destino, defecto):
     try:
-        respuesta = requests.get(f"https://open.er-api.com/v6/latest/{base}")
+        respuesta = requests.get(f"https://open.er-api.com/v6/latest/{base}", timeout=5)
         respuesta.raise_for_status() # Lanza un error para HTTP 4xx/5xx
         datos = respuesta.json()
         return datos["rates"][destino]
@@ -427,6 +427,10 @@ def convertir():
         return jsonify({"error": "Por favor, introduce un número válido y mayor que cero."})
     except Exception:
         return jsonify({"error": "Ocurrió un error. Intenta de nuevo más tarde."})
+
+@app.route("/health", methods=["GET"])
+def health():
+    return "OK", 200
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
