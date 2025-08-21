@@ -208,6 +208,8 @@ TEMPLATE = """
 <html>
 <head>
     <title>Conversor de Monedas</title>
+    <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-4347223649983931"
+        crossorigin="anonymous"></script>
     <style>
         body {
             font-family: 'Segoe UI', 'Roboto', Arial, sans-serif;
