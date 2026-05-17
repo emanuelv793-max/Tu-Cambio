@@ -1,479 +1,505 @@
+from __future__ import annotations
 
-from flask import Flask, render_template_string, request, jsonify
-import requests
+import math
 import os
-import sqlite3
-from functools import lru_cache
-from datetime import datetime
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+from xml.etree.ElementTree import Element, SubElement, tostring
 
-# --- LÓGICA DE LA BASE DE DATOS ---
-def init_db():
-    """Inicializa la base de datos de historial."""
-    conn = sqlite3.connect('historial.db')
-    cursor = conn.cursor()
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS historial (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            cantidad REAL NOT NULL,
-            moneda_origen TEXT NOT NULL,
-            moneda_destino TEXT NOT NULL,
-            resultado TEXT NOT NULL,
-            tasa REAL NOT NULL,
-            fecha TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+from flask import (
+    Flask,
+    abort,
+    current_app,
+    jsonify,
+    make_response,
+    render_template,
+    request,
+    send_from_directory,
+    url_for,
+)
+
+from currencies import CURRENCIES, CURRENCY_INDEX, DEFAULT_BASE_CURRENCY, DEFAULT_QUOTE_CURRENCY, FEATURED_PAIRS
+from database import fetch_recent_history, init_db, record_conversion, register_alert_subscription
+from rate_service import RateQuote, RateService
+
+WHOLE_NUMBER_CURRENCIES = {"JPY", "PYG", "VES"}
+DEFAULT_HISTORY_LIMIT = 6
+
+
+def create_app(test_config: dict[str, Any] | None = None) -> Flask:
+    app = Flask(__name__)
+    app.config.from_mapping(
+        APP_NAME="Tu Cambio",
+        DATABASE_PATH=Path(os.environ.get("DATABASE_PATH", "historial.db")),
+        RATE_CACHE_TTL_SECONDS=int(os.environ.get("RATE_CACHE_TTL_SECONDS", "900")),
+        RATE_REQUEST_TIMEOUT_SECONDS=float(os.environ.get("RATE_REQUEST_TIMEOUT_SECONDS", "5")),
+        HISTORY_LIMIT=DEFAULT_HISTORY_LIMIT,
+    )
+
+    if test_config:
+        app.config.update(test_config)
+
+    init_db(app.config["DATABASE_PATH"])
+    app.extensions["rate_service"] = app.config.get(
+        "RATE_SERVICE",
+        RateService(
+            ttl_seconds=app.config["RATE_CACHE_TTL_SECONDS"],
+            timeout_seconds=app.config["RATE_REQUEST_TIMEOUT_SECONDS"],
+        ),
+    )
+
+    @app.after_request
+    def apply_response_headers(response):
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+        response.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
+        response.headers.setdefault("Permissions-Policy", "geolocation=(), camera=(), microphone=()")
+        if request.path.startswith("/static/"):
+            response.headers.setdefault("Cache-Control", "public, max-age=86400")
+        return response
+
+    @app.route("/")
+    def home():
+        return render_pair_page(DEFAULT_BASE_CURRENCY, DEFAULT_QUOTE_CURRENCY, canonical_home=True)
+
+    @app.route("/cambio/<pair_slug>")
+    def pair_page(pair_slug: str):
+        base_currency, quote_currency = parse_pair_slug(pair_slug)
+        if not base_currency or not quote_currency:
+            abort(404)
+        return render_pair_page(base_currency, quote_currency)
+
+    @app.route("/convertir", methods=["POST"])
+    def convert():
+        payload = request.get_json(silent=True) or {}
+        amount_value = payload.get("cantidad")
+        base_currency = normalize_currency_code(payload.get("moneda_origen"))
+        quote_currency = normalize_currency_code(payload.get("moneda_destino"))
+
+        if base_currency not in CURRENCY_INDEX or quote_currency not in CURRENCY_INDEX:
+            return jsonify({"error": "Selecciona dos divisas validas."}), 400
+
+        try:
+            amount = parse_amount(amount_value)
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+
+        if base_currency == quote_currency:
+            conversion_payload = build_same_currency_payload(amount, base_currency)
+        else:
+            rate_quote = resolve_rate_quote(base_currency, quote_currency)
+            if rate_quote is None:
+                return jsonify({"error": "No hemos podido obtener el tipo de cambio ahora mismo."}), 503
+            conversion_payload = build_conversion_payload(amount, base_currency, quote_currency, rate_quote)
+
+        history_item = persist_conversion(conversion_payload)
+        conversion_payload["history_item"] = history_item
+        conversion_payload["pair_slug"] = build_pair_slug(base_currency, quote_currency)
+        conversion_payload["share_url"] = url_for(
+            "pair_page",
+            pair_slug=build_pair_slug(base_currency, quote_currency),
         )
-    ''')
-    conn.commit()
-    conn.close()
+        return jsonify(conversion_payload)
 
-def guardar_conversion(cantidad, moneda_origen, moneda_destino, resultado, tasa):
-    """Guarda una conversión en la base de datos."""
-    conn = sqlite3.connect('historial.db')
-    cursor = conn.cursor()
-    cursor.execute('''
-        INSERT INTO historial (cantidad, moneda_origen, moneda_destino, resultado, tasa)
-        VALUES (?, ?, ?, ?, ?)
-    ''', (cantidad, moneda_origen, moneda_destino, resultado, tasa))
-    conn.commit()
-    conn.close()
+    @app.route("/historial")
+    def history():
+        limit = request.args.get("limite", default=app.config["HISTORY_LIMIT"], type=int)
+        history_items = get_history_payload(limit=max(1, min(limit, 20)))
+        return jsonify(history_items)
 
-def obtener_historial(limite=10):
-    """Obtiene el historial de conversiones."""
-    conn = sqlite3.connect('historial.db')
-    cursor = conn.cursor()
-    cursor.execute('SELECT * FROM historial ORDER BY fecha DESC LIMIT ?', (limite,))
-    historial = cursor.fetchall()
-    conn.close()
-    return historial
+    @app.route("/suscribirse-alertas", methods=["POST"])
+    def subscribe_alerts():
+        payload = request.get_json(silent=True) or {}
+        email = str(payload.get("email", "")).strip().lower()
+        base_currency = normalize_currency_code(payload.get("moneda_origen"))
+        quote_currency = normalize_currency_code(payload.get("moneda_destino"))
 
-# Inicializar la base de datos al arrancar
-init_db()
+        if not is_valid_email(email):
+            return jsonify({"error": "Introduce un correo valido para la lista beta."}), 400
 
-# --- MONEDAS Y CONVERSIÓN ---
-MONEDAS = [
-    {"codigo": "EUR", "nombre": "Euro", "bandera": "https://flagcdn.com/eu.svg"},
-    {"codigo": "USD", "nombre": "Dólar estadounidense", "bandera": "https://flagcdn.com/us.svg"},
-    {"codigo": "VES", "nombre": "Bolívar venezolano", "bandera": "https://flagcdn.com/ve.svg"},
-    {"codigo": "PYG", "nombre": "Guaraní paraguayo", "bandera": "https://flagcdn.com/py.svg"},
-    {"codigo": "ARS", "nombre": "Peso argentino", "bandera": "https://flagcdn.com/ar.svg"},
-    {"codigo": "MXN", "nombre": "Peso mexicano", "bandera": "https://flagcdn.com/mx.svg"},
-    {"codigo": "CLP", "nombre": "Peso chileno", "bandera": "https://flagcdn.com/cl.svg"},
-    {"codigo": "COP", "nombre": "Peso colombiano", "bandera": "https://flagcdn.com/co.svg"},
-    {"codigo": "BRL", "nombre": "Real brasileño", "bandera": "https://flagcdn.com/br.svg"},
-    {"codigo": "GBP", "nombre": "Libra esterlina", "bandera": "https://flagcdn.com/gb.svg"},
-    {"codigo": "JPY", "nombre": "Yen japonés", "bandera": "https://flagcdn.com/jp.svg"},
-    {"codigo": "CAD", "nombre": "Dólar canadiense", "bandera": "https://flagcdn.com/ca.svg"},
-    {"codigo": "AUD", "nombre": "Dólar australiano", "bandera": "https://flagcdn.com/au.svg"},
-    {"codigo": "CHF", "nombre": "Franco suizo", "bandera": "https://flagcdn.com/ch.svg"},
-    {"codigo": "CNY", "nombre": "Yuan chino", "bandera": "https://flagcdn.com/cn.svg"},
-    {"codigo": "SEK", "nombre": "Corona sueca", "bandera": "https://flagcdn.com/se.svg"},
-]
+        if base_currency not in CURRENCY_INDEX or quote_currency not in CURRENCY_INDEX:
+            return jsonify({"error": "Selecciona un par de divisas valido para apuntarte."}), 400
 
-MONEDA_IDX = {m["codigo"]: m for m in MONEDAS}
+        created = register_alert_subscription(
+            app.config["DATABASE_PATH"],
+            email=email,
+            base_currency=base_currency,
+            quote_currency=quote_currency,
+        )
 
-import time
-# --- Caché rápido de tasas para acelerar respuestas ---
-TASAS_CACHE = {}
-CACHE_TTL = 20 * 60  # 20 min en segundos
+        if created:
+            message = "Perfecto. Te hemos apuntado a la lista beta de alertas para este par."
+        else:
+            message = "Ya estabas apuntado a la lista beta para este par."
 
-def obtener_tasa(moneda_base, moneda_destino):
-    """
-    Obtiene la tasa usando caché y una petición rápida (timeout 3s). Si la API falla, intenta usar la última tasa cacheada aún si está "caducada", avisando al usuario si la tasa es antigua.
-    """
-    now = time.time()
-    clave = (moneda_base, moneda_destino)
-    # 1. Si en caché válida => usar
-    if clave in TASAS_CACHE:
-        tasa, timestamp = TASAS_CACHE[clave]
-        if now - timestamp < CACHE_TTL:
-            return tasa
-    # 2. Intentar obtener tasas frescas para moneda_base
-    try:
-        resp = requests.get(f"https://open.er-api.com/v6/latest/{moneda_base}", timeout=3)
-        datos = resp.json()
-        if datos["result"] == "success" and moneda_destino in datos["rates"]:
-            tasa = float(datos["rates"][moneda_destino])
-            TASAS_CACHE[clave] = (tasa, now)
-            return tasa
-    except Exception as e:
-        print(f"Error de API: {e}")
-    # 3. Fallback: usar caché vieja (si existe, aunque esté caducada)
-    if clave in TASAS_CACHE:
-        tasa, timestamp = TASAS_CACHE[clave]
-        return tasa
-    return None
+        return jsonify({"ok": True, "message": message})
 
-def _formatear_resultado(moneda_codigo, valor):
-    """Formatea el valor del resultado según la moneda."""
-    if moneda_codigo in ["PYG", "VES", "JPY"]:
-        return f"{valor:,.0f}"
-    else:
-        return f"{valor:,.2f}"
+    @app.route("/health")
+    def health():
+        return jsonify({"status": "ok"})
 
-def _obtener_historial_con_banderas(limite=5):
-    """Obtiene el historial y añade las banderas para el frontend."""
-    historial = obtener_historial(limite)
-    historial_con_banderas = []
-    for item in historial:
-        # Los elementos del historial: (id, cantidad, origen_cod, destino_cod, resultado, tasa, fecha)
-        origen_codigo = item[2]
-        destino_codigo = item[3]
-        
-        # Buscar las banderas
-        bandera_origen = MONEDA_IDX.get(origen_codigo, {}).get("bandera", "")
-        bandera_destino = MONEDA_IDX.get(destino_codigo, {}).get("bandera", "")
-        nombre_origen = MONEDA_IDX.get(origen_codigo, {}).get("nombre", origen_codigo)
-        nombre_destino = MONEDA_IDX.get(destino_codigo, {}).get("nombre", destino_codigo)
-        
-        # Convertir a lista y añadir información adicional
-        historial_item = list(item)
-        historial_item.extend([bandera_origen, bandera_destino, nombre_origen, nombre_destino])
-        historial_con_banderas.append(historial_item)
-    return historial_con_banderas
+    @app.route("/robots.txt")
+    def robots():
+        sitemap_url = url_for("sitemap", _external=True)
+        response = make_response(f"User-agent: *\nAllow: /\nSitemap: {sitemap_url}\n")
+        response.headers["Content-Type"] = "text/plain; charset=utf-8"
+        return response
 
-# --- RUTAS ---
-app = Flask(__name__)
+    @app.route("/sitemap.xml")
+    def sitemap():
+        namespace = "http://www.sitemaps.org/schemas/sitemap/0.9"
+        urlset = Element("urlset", xmlns=namespace)
 
-@app.route("/")
-def index():
-    historial = _obtener_historial_con_banderas()
-    return render_template_string(TEMPLATE, monedas=MONEDAS, historial=historial, MONEDA_IDX=MONEDA_IDX)
+        urls = [url_for("home", _external=True)]
+        for base_currency in CURRENCIES:
+            for quote_currency in CURRENCIES:
+                if base_currency["code"] == quote_currency["code"]:
+                    continue
+                urls.append(
+                    url_for(
+                        "pair_page",
+                        pair_slug=build_pair_slug(base_currency["code"], quote_currency["code"]),
+                        _external=True,
+                    )
+                )
 
-@app.route("/convertir", methods=["POST"])
-def convertir():
-    try:
-        data = request.json
-        cantidad_raw = data.get("cantidad")
-        moneda_origen = data.get("moneda_origen")
-        moneda_destino = data.get("moneda_destino")
+        last_modified = datetime.now(timezone.utc).date().isoformat()
+        for location in urls:
+            url_node = SubElement(urlset, "url")
+            SubElement(url_node, "loc").text = location
+            SubElement(url_node, "lastmod").text = last_modified
 
-        # Validar la entrada
-        if not all([cantidad_raw, moneda_origen, moneda_destino]):
-            return jsonify({"error": "Faltan parámetros."}), 400
-        if moneda_origen not in MONEDA_IDX or moneda_destino not in MONEDA_IDX:
-            return jsonify({"error": "Moneda no válida."}), 400
-        
-        try:
-            cantidad = float(cantidad_raw)
-        except (TypeError, ValueError):
-            return jsonify({"error": "Cantidad no válida."}), 400
-        
-        if cantidad <= 0:
-            return jsonify({"error": "La cantidad debe ser mayor que cero."}), 400
+        response = make_response(tostring(urlset, encoding="unicode"))
+        response.headers["Content-Type"] = "application/xml; charset=utf-8"
+        return response
 
-        # Obtener tasa y calcular resultado
-        tasa = obtener_tasa(moneda_origen, moneda_destino)
-        if tasa is None:
-            # Intentar con monedas invertidas como fallback
-            tasa = obtener_tasa(moneda_destino, moneda_origen)
-            if tasa is None:
-                return jsonify({"error": "No se pudo obtener la tasa de cambio."}), 500
-            tasa = 1 / tasa
+    @app.route("/ads.txt")
+    def ads():
+        ads_file = Path(app.root_path) / "ads.txt"
+        if not ads_file.exists():
+            abort(404)
+        return send_from_directory(app.root_path, "ads.txt")
 
-        resultado_val = cantidad * tasa
-        resultado_formateado = _formatear_resultado(moneda_destino, resultado_val)
-        nombre_destino = MONEDA_IDX[moneda_destino]["nombre"]
-        resultado_str = f"{resultado_formateado} {nombre_destino}"
-        
-        # Guardar en historial
-        try:
-            guardar_conversion(
-                cantidad=cantidad,
-                moneda_origen=moneda_origen,
-                moneda_destino=moneda_destino,
-                resultado=resultado_str,
-                tasa=float(tasa)
+    return app
+
+
+def render_pair_page(base_currency: str, quote_currency: str, canonical_home: bool = False):
+    initial_amount = 1.0
+    initial_conversion = build_same_currency_payload(initial_amount, base_currency)
+    if base_currency != quote_currency:
+        rate_quote = resolve_rate_quote(base_currency, quote_currency)
+        if rate_quote is not None:
+            initial_conversion = build_conversion_payload(
+                initial_amount,
+                base_currency,
+                quote_currency,
+                rate_quote,
             )
-        except Exception as e:
-            print(f"Error guardando historial: {e}")
 
-        return jsonify({
-            "cantidad": cantidad,
-            "resultado": resultado_str,
-            "tasa": f"{float(tasa):,.6f}",
-        })
-    
-    except Exception as e:
-        print(f"Error en /convertir: {e}")
-        return jsonify({"error": "Error interno del servidor."}), 500
+    base_details = get_currency(base_currency)
+    quote_details = get_currency(quote_currency)
+    pair_label = f"{base_details['name']} a {quote_details['name']}"
+    canonical_url = (
+        url_for(
+            "home" if canonical_home else "pair_page",
+            pair_slug=build_pair_slug(base_currency, quote_currency),
+            _external=True,
+        )
+        if not canonical_home
+        else url_for("home", _external=True)
+    )
+    quick_pairs = [
+        {
+            "label": f"{get_currency(base)['code']} / {get_currency(quote)['code']}",
+            "description": f"{get_currency(base)['name']} a {get_currency(quote)['name']}",
+            "href": url_for("pair_page", pair_slug=build_pair_slug(base, quote)),
+            "active": base == base_currency and quote == quote_currency,
+        }
+        for base, quote in FEATURED_PAIRS
+    ]
 
-@app.route("/historial")
-def get_historial():
-    historial_con_banderas = _obtener_historial_con_banderas()
-    return jsonify(historial_con_banderas)
+    history_items = get_history_payload()
 
+    seo_schema = {
+        "@context": "https://schema.org",
+        "@type": "WebApplication",
+        "name": "Tu Cambio",
+        "applicationCategory": "FinanceApplication",
+        "operatingSystem": "Any",
+        "description": f"Landing premium para {pair_label.lower()} con scroll narrativo, profundidad por capas y acceso beta.",
+        "url": canonical_url,
+    }
 
-# Template HTML anterior (más simple)
-TEMPLATE = """
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Conversor de Monedas</title>
-    <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-4347223649983931"
-        crossorigin="anonymous"></script>
-    <style>
-        body {
-            font-family: 'Segoe UI', 'Roboto', Arial, sans-serif;
-            margin: 0;
-            min-height: 100vh;
-            /* Fondo imagen Unsplash */
-            background: url('https://images.unsplash.com/photo-1464983953574-0892a716854b?auto=format&fit=crop&w=1400&q=80') center center/cover no-repeat fixed;
-        }
-        /* Capa de oscurecimiento y desenfoque para legibilidad */
-        body:before {
-            content: '';
-            position: fixed;
-            top: 0; left: 0; width: 100vw; height: 100vh;
-            background: rgba(25, 30, 45, 0.48);
-            backdrop-filter: blur(4px);
-            z-index: 0;
-        }
-        .container {
-            position: relative;
-            z-index: 2;
-            max-width: 420px;
-            margin: 48px auto 0 auto;
-            padding: 32px 34px 27px 34px;
-            background: rgba(255,255,255,0.88);
-            border-radius: 20px;
-            box-shadow: 0 8px 32px 0 rgba(74,74,120,0.15), 0 1.5px 8px #cdd0fd;
-            border: 1.5px solid rgba(80,120,250,0.15);
-            backdrop-filter: blur(3px);
-        }
-        h1 {
-            text-align: center;
-            color: #2a53a8;
-            letter-spacing: 1.6px;
-            font-weight: 900;
-            margin-bottom: 8px;
-            font-size: 2rem;
-            text-shadow: 0 2px 6px #cef6f6aa;
-        }
-        label {
-            display: block;
-            margin-top: 15px;
-            font-size: 1rem;
-            color: #2c3046;
-            font-weight: 500;
-            letter-spacing: 0.1em;
-        }
-        input, select {
-            width: 100%;
-            padding: 9px 10px;
-            margin-top: 6px;
-            font-size: 1em;
-            border: 1px solid #e6e6e6;
-            border-radius: 7px;
-            box-sizing: border-box;
-            background: #f4f8fb;
-            margin-bottom: 3px;
-            transition: border 0.2s;
-        }
-        input:focus, select:focus {
-            outline: none;
-            box-shadow: 0 0 0 2px #9ad2fa;
-            border: 1.5px solid #9ad2fa;
-            background: #fff;
-        }
-        #convert-btn {
-            background: linear-gradient(90deg,#1670e9,#ff7c53);
-            color: white;
-            font-weight: 700;
-            padding: 11px 10px;
-            border: none;
-            border-radius: 8px;
-            margin-top: 18px;
-            width: 100%;
-            font-size: 1em;
-            letter-spacing: 1px;
-            cursor: pointer;
-            transition: background .17s, box-shadow .14s;
-            box-shadow: 0px 1px 5px #e6e7fe;
-        }
-        #convert-btn:hover {
-            background: linear-gradient(90deg,#1670e9,#ffac53);
-        }
-        .resultado {
-            margin-top: 22px;
-            padding: 10px;
-            border-radius: 7px;
-            border: 1.5px solid #e5eaff;
-            background-color: #f7f8fc;
-            text-align: center;
-            min-height: 50px;
-        }
-        .resultado h2 {
-            margin: 0 0 5px 0;
-            color: #1670e9;
-            font-size: 1.5em;
-        }
-        .historial {
-            margin-top: 24px;
-        }
-        .historial h3 {
-            border-bottom: 1.5px solid #eae9ff;
-            padding-bottom: 7px;
-            margin-bottom: 11px;
-            font-size: 1.15em;
-            letter-spacing: 0.03em;
-            color: #444;
-        }
-        .historial ul {
-            list-style-type: none;
-            padding: 0;
-            margin: 0;
-        }
-        .historial li {
-            display: flex;
-            align-items: center;
-            gap: 7px;
-            padding: 6px 0;
-            border-bottom: 1px solid #f2eeee;
-            font-size: 1em;
-        }
-        .flag {
-            width: 20px; height: 15px;
-            border: 1px solid #d7d7d7;
-            border-radius: 3px;
-            margin-right: 5px;
-            background: #f7f7f7;
-            object-fit: contain;
-        }
-        @media (max-width: 600px) {
-            .container {
-                margin: 0;
-                border-radius: 0;
-                box-shadow: none;
-                padding: 12px 3vw 16px 3vw;
+    bootstrap_data = {
+        "appName": current_app.config["APP_NAME"],
+        "currencies": CURRENCIES,
+        "selectedPair": {
+            "baseCurrency": base_currency,
+            "quoteCurrency": quote_currency,
+            "pairLabel": pair_label,
+            "pairSlug": build_pair_slug(base_currency, quote_currency),
+            "baseName": base_details["name"],
+            "quoteName": quote_details["name"],
+        },
+        "liveSnapshot": {
+            "amountDisplay": initial_conversion["amount_display"],
+            "convertedAmountDisplay": initial_conversion["converted_amount_display"],
+            "rateDisplay": initial_conversion["rate_display"],
+            "provider": initial_conversion["provider"],
+            "lastUpdated": initial_conversion["last_updated"],
+            "nextUpdate": initial_conversion["next_update"],
+        },
+        "quickPairs": quick_pairs,
+        "historyItems": [
+            {
+                "amountDisplay": item["amount_display"],
+                "baseCurrency": item["base_currency"],
+                "quoteCurrency": item["quote_currency"],
+                "convertedAmountDisplay": item["converted_amount_display"],
+                "provider": item["provider"],
+                "createdAt": item["created_at"],
+                "stale": item["stale"],
             }
-            h1 {
-                font-size: 1.2em;
+            for item in history_items
+        ],
+        "metrics": {
+            "currencies": len(CURRENCIES),
+            "featuredPairs": len(FEATURED_PAIRS),
+            "history": len(history_items),
+        },
+        "historyLimit": current_app.config["HISTORY_LIMIT"],
+        "endpoints": {
+            "convert": url_for("convert"),
+            "subscribe": url_for("subscribe_alerts"),
+            "history": url_for("history"),
+            "home": url_for("home"),
+        },
+    }
+
+    return render_template(
+        "index.html",
+        app_name=current_app.config["APP_NAME"],
+        page_title=f"{pair_label} | Landing premium con scroll inmersivo | Tu Cambio",
+        page_description=f"Descubre {pair_label.lower()} en una landing premium con parallax por capas, secciones pinned y acceso beta.",
+        canonical_url=canonical_url,
+        seo_schema=seo_schema,
+        bootstrap_data=bootstrap_data,
+        frontend_css_url=url_for("static", filename="app-dist/assets/app.css"),
+        frontend_js_url=url_for("static", filename="app-dist/assets/app.js"),
+    )
+
+
+def build_same_currency_payload(amount: float, currency_code: str) -> dict[str, Any]:
+    currency = get_currency(currency_code)
+    amount_display = format_amount(amount, currency_code)
+    return {
+        "amount": amount,
+        "amount_display": amount_display,
+        "base_currency": currency_code,
+        "base_name": currency["name"],
+        "quote_currency": currency_code,
+        "quote_name": currency["name"],
+        "converted_amount": amount,
+        "converted_amount_display": amount_display,
+        "result_display": f"{amount_display} {currency_code}",
+        "rate": 1.0,
+        "rate_display": "1.000000",
+        "provider": "Local",
+        "source_url": "",
+        "last_updated": "Instantaneo",
+        "next_update": "",
+        "stale": False,
+    }
+
+
+def build_conversion_payload(
+    amount: float,
+    base_currency: str,
+    quote_currency: str,
+    rate_quote: RateQuote,
+) -> dict[str, Any]:
+    base_details = get_currency(base_currency)
+    quote_details = get_currency(quote_currency)
+    converted_amount = amount * rate_quote.rate
+
+    return {
+        "amount": amount,
+        "amount_display": format_amount(amount, base_currency),
+        "base_currency": base_currency,
+        "base_name": base_details["name"],
+        "quote_currency": quote_currency,
+        "quote_name": quote_details["name"],
+        "converted_amount": converted_amount,
+        "converted_amount_display": format_amount(converted_amount, quote_currency),
+        "result_display": f"{format_amount(converted_amount, quote_currency)} {quote_currency}",
+        "rate": rate_quote.rate,
+        "rate_display": format_rate(rate_quote.rate),
+        "provider": rate_quote.provider,
+        "source_url": rate_quote.source_url,
+        "last_updated": rate_quote.last_updated or "Sin dato",
+        "next_update": rate_quote.next_update or "",
+        "stale": rate_quote.stale,
+    }
+
+
+def persist_conversion(conversion_payload: dict[str, Any]) -> dict[str, Any]:
+    record_conversion(
+        current_app.config["DATABASE_PATH"],
+        amount=conversion_payload["amount"],
+        base_currency=conversion_payload["base_currency"],
+        quote_currency=conversion_payload["quote_currency"],
+        converted_amount=conversion_payload["converted_amount"],
+        converted_amount_display=conversion_payload["converted_amount_display"],
+        rate=conversion_payload["rate"],
+        rate_display=conversion_payload["rate_display"],
+        provider=conversion_payload["provider"],
+        is_stale=conversion_payload["stale"],
+    )
+
+    return {
+        "amount_display": conversion_payload["amount_display"],
+        "base_currency": conversion_payload["base_currency"],
+        "base_name": conversion_payload["base_name"],
+        "base_flag": get_currency(conversion_payload["base_currency"])["flag_url"],
+        "quote_currency": conversion_payload["quote_currency"],
+        "quote_name": conversion_payload["quote_name"],
+        "quote_flag": get_currency(conversion_payload["quote_currency"])["flag_url"],
+        "converted_amount_display": conversion_payload["converted_amount_display"],
+        "rate_display": conversion_payload["rate_display"],
+        "provider": conversion_payload["provider"],
+        "stale": conversion_payload["stale"],
+        "created_at": "Ahora mismo",
+    }
+
+
+def get_history_payload(limit: int | None = None) -> list[dict[str, Any]]:
+    history_rows = fetch_recent_history(
+        current_app.config["DATABASE_PATH"],
+        limit=limit or current_app.config["HISTORY_LIMIT"],
+    )
+    items: list[dict[str, Any]] = []
+    for row in history_rows:
+        base_currency = row["base_currency"]
+        quote_currency = row["quote_currency"]
+        base_details = get_currency(base_currency)
+        quote_details = get_currency(quote_currency)
+        created_at = format_history_timestamp(row["created_at"])
+        items.append(
+            {
+                "amount_display": format_amount(row["amount"], base_currency),
+                "base_currency": base_currency,
+                "base_name": base_details["name"],
+                "base_flag": base_details["flag_url"],
+                "quote_currency": quote_currency,
+                "quote_name": quote_details["name"],
+                "quote_flag": quote_details["flag_url"],
+                "converted_amount_display": row["converted_amount_display"],
+                "rate_display": row["rate_display"],
+                "provider": row["provider"],
+                "stale": bool(row["is_stale"]),
+                "created_at": created_at,
             }
-        }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <h1>Tu Cambio</h1>
-        <form id="conversion-form">
-            <label for="cantidad">Cantidad:</label>
-            <input type="number" id="cantidad" value="1" step="0.01" required>
+        )
+    return items
 
-            <label for="moneda_origen">De:</label>
-            <select id="moneda_origen">
-                {% for moneda in monedas %}
-                <option value="{{ moneda['codigo'] }}" {% if moneda['codigo'] == 'USD' %}selected{% endif %}>{{ moneda['nombre'] }} ({{ moneda['codigo'] }})</option>
-                {% endfor %}
-            </select>
 
-            <label for="moneda_destino">A:</label>
-            <select id="moneda_destino">
-                {% for moneda in monedas %}
-                <option value="{{ moneda['codigo'] }}" {% if moneda['codigo'] == 'EUR' %}selected{% endif %}>{{ moneda['nombre'] }} ({{ moneda['codigo'] }})</option>
-                {% endfor %}
-            </select>
-            
-            <button type="button" id="convert-btn">Convertir</button>
-        </form>
+def resolve_rate_quote(base_currency: str, quote_currency: str) -> RateQuote | None:
+    rate_service: RateService = current_app.extensions["rate_service"]
+    direct_quote = rate_service.get_rate(base_currency, quote_currency)
+    if direct_quote is not None:
+        return direct_quote
 
-        <div class="resultado">
-            <h2 id="resultado-texto"></h2>
-            <p id="tasa-texto"></p>
-        </div>
+    inverse_quote = rate_service.get_rate(quote_currency, base_currency)
+    if inverse_quote is None or inverse_quote.rate == 0:
+        return None
 
-        <!-- Google AdSense (tu código): -->
-        <div style="margin: 16px 0; text-align: center;">
-            <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-4347223649983931" crossorigin="anonymous"></script>
-            <ins class="adsbygoogle"
-                 style="display:block; min-height:100px; text-align:center; background:rgba(249,249,249,0.18); border-radius:14px;"
-                 data-ad-client="ca-pub-4347223649983931"
-                 data-ad-slot="1234567890"
-                 data-ad-format="auto"></ins>
-            <script>
-                 (adsbygoogle = window.adsbygoogle || []).push({});
-            </script>
-        </div>
+    return RateQuote(
+        base_currency=base_currency,
+        quote_currency=quote_currency,
+        rate=1 / inverse_quote.rate,
+        provider=inverse_quote.provider,
+        source_url=inverse_quote.source_url,
+        last_updated=inverse_quote.last_updated,
+        next_update=inverse_quote.next_update,
+        stale=inverse_quote.stale,
+    )
 
-        <div class="historial">
-            <h3>Historial Reciente</h3>
-            <ul id="historial-lista">
-                </ul>
-        </div>
-    </div>
 
-    <script>
-        document.addEventListener('DOMContentLoaded', function() {
-            const cantidadInput = document.getElementById('cantidad');
-            const origenSelect = document.getElementById('moneda_origen');
-            const destinoSelect = document.getElementById('moneda_destino');
-            const convertBtn = document.getElementById('convert-btn');
-            const resultadoTexto = document.getElementById('resultado-texto');
-            const tasaTexto = document.getElementById('tasa-texto');
-            const historialLista = document.getElementById('historial-lista');
+def parse_amount(value: Any) -> float:
+    text = str(value or "").strip().replace(" ", "")
+    if not text:
+        raise ValueError("Introduce una cantidad valida.")
 
-            function actualizarHistorial() {
-                fetch('/historial')
-                    .then(response => response.json())
-                    .then(historial => {
-                        historialLista.innerHTML = '';
-                        historial.forEach(item => {
-                            const li = document.createElement('li');
-                            // item: (id, cantidad, origen, destino, resultado, tasa, fecha, bandera_origen, bandera_destino, nombre_origen, nombre_destino)
-                            li.innerHTML = `
-                                <img class="flag" src="${item[7]}" alt="origen"> <b>${item[1]}</b> ${item[9]}
-                                <span style="font-size:1.3em; margin: 0 0.4em;">→</span>
-                                <img class="flag" src="${item[8]}" alt="destino"> <b>${item[4]}</b>
-                                <span style="font-size:0.85em; color:#778;">${item[6].substring(0, 16).replace('T',' ')}</span>
-                            `;
-                            historialLista.appendChild(li);
-                        });
-                        if(historial.length === 0) {
-                            const li = document.createElement('li');
-                            li.textContent = 'No hay conversiones recientes.';
-                            historialLista.appendChild(li);
-                        }
-                    });
-            }
+    if "," in text and "." in text:
+        if text.rfind(",") > text.rfind("."):
+            text = text.replace(".", "").replace(",", ".")
+        else:
+            text = text.replace(",", "")
+    elif "," in text:
+        text = text.replace(",", ".")
 
-            function convertir() {
-                const cantidad = cantidadInput.value;
-                const monedaOrigen = origenSelect.value;
-                const monedaDestino = destinoSelect.value;
+    amount = float(text)
+    if not math.isfinite(amount) or amount <= 0:
+        raise ValueError("La cantidad debe ser un numero mayor que cero.")
+    return amount
 
-                fetch('/convertir', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        cantidad: cantidad,
-                        moneda_origen: monedaOrigen,
-                        moneda_destino: monedaDestino
-                    })
-                })
-                .then(response => response.json())
-                .then(data => {
-                    if (data.error) {
-                        resultadoTexto.textContent = `Error: ${data.error}`;
-                        tasaTexto.textContent = '';
-                    } else {
-                        resultadoTexto.textContent = data.resultado;
-                        tasaTexto.textContent = `Tasa: 1 ${monedaOrigen} = ${data.tasa} ${monedaDestino}`;
-                        actualizarHistorial();
-                    }
-                })
-                .catch(error => {
-                    resultadoTexto.textContent = 'Error de conexión';
-                    tasaTexto.textContent = '';
-                    console.error('Error:', error);
-                });
-            }
 
-            convertBtn.addEventListener('click', convertir);
-            actualizarHistorial();
-        });
-    </script>
-</body>
-</html>
-"""
+def format_amount(value: float, currency_code: str) -> str:
+    decimals = 0 if currency_code in WHOLE_NUMBER_CURRENCIES else 2
+    return f"{value:,.{decimals}f}"
+
+
+def format_rate(rate: float) -> str:
+    return f"{rate:,.6f}"
+
+
+def format_history_timestamp(value: str) -> str:
+    try:
+        dt_value = datetime.fromisoformat(value.replace("Z", ""))
+    except ValueError:
+        return value
+    return dt_value.strftime("%d %b %Y %H:%M UTC")
+
+
+def get_currency(currency_code: str) -> dict[str, str]:
+    currency = CURRENCY_INDEX.get(currency_code)
+    if currency is None:
+        raise KeyError(f"Unsupported currency: {currency_code}")
+    return currency
+
+
+def normalize_currency_code(value: Any) -> str:
+    return str(value or "").strip().upper()
+
+
+def build_pair_slug(base_currency: str, quote_currency: str) -> str:
+    return f"{base_currency.lower()}-{quote_currency.lower()}"
+
+
+def parse_pair_slug(pair_slug: str) -> tuple[str | None, str | None]:
+    parts = pair_slug.split("-", maxsplit=1)
+    if len(parts) != 2:
+        return None, None
+    base_currency = normalize_currency_code(parts[0])
+    quote_currency = normalize_currency_code(parts[1])
+    if base_currency not in CURRENCY_INDEX or quote_currency not in CURRENCY_INDEX:
+        return None, None
+    if base_currency == quote_currency:
+        return None, None
+    return base_currency, quote_currency
+
+
+def is_valid_email(email: str) -> bool:
+    if not email or "@" not in email:
+        return False
+    local_part, _, domain = email.partition("@")
+    return bool(local_part and domain and "." in domain)
+
+
+app = create_app()
+
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host='0.0.0.0', port=port, debug=False)
+    port = int(os.environ.get("PORT", "5000"))
+    app.run(host="0.0.0.0", port=port, debug=False)

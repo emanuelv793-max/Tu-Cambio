@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title">
+  <title>Tu Cambio</title>
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#fb923c" />
+      <stop offset="100%" stop-color="#f97316" />
+    </linearGradient>
+  </defs>
+  <rect width="256" height="256" rx="56" fill="#fff8f3" />
+  <rect x="20" y="20" width="216" height="216" rx="52" fill="url(#bg)" />
+  <path d="M132 58c25 0 47 10 63 28l-19 15c-11-12-25-18-43-18-18 0-34 9-43 24h61v22H82a55 55 0 0 0 0 18h69v22H90c9 15 25 24 43 24 18 0 32-6 43-18l19 15c-16 18-38 28-63 28-31 0-58-17-70-43H40v-22h16a84 84 0 0 1 0-18H40v-22h22c12-26 39-43 70-43Z" fill="#ffffff" />
+</svg>
