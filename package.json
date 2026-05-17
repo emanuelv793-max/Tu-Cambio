@@ -2,7 +2,7 @@
   "name": "tu-cambio-main",
   "private": true,
   "version": "1.0.0",
-  "description": "Landing premium de Tu Cambio con React, Tailwind, GSAP y Flask.",
+  "description": "Conversor sencillo de divisas con React, Tailwind, Vite y Flask.",
   "directories": {
     "test": "tests"
   },

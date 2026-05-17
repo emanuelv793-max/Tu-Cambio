@@ -6,3 +6,5 @@ node_modules/
 output/
 local_server.out
 local_server.err
+
+.vercel

@@ -1,0 +1,8 @@
+node_modules
+output
+__pycache__
+*.pyc
+*.db
+*.log
+local_server.out
+local_server.err

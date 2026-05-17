@@ -227,7 +227,7 @@ def render_pair_page(base_currency: str, quote_currency: str, canonical_home: bo
         "name": "Tu Cambio",
         "applicationCategory": "FinanceApplication",
         "operatingSystem": "Any",
-        "description": f"Landing premium para {pair_label.lower()} con scroll narrativo, profundidad por capas y acceso beta.",
+        "description": f"Conversor sencillo para revisar {pair_label.lower()} con tasa actualizada.",
         "url": canonical_url,
     }
 
@@ -280,8 +280,8 @@ def render_pair_page(base_currency: str, quote_currency: str, canonical_home: bo
     return render_template(
         "index.html",
         app_name=current_app.config["APP_NAME"],
-        page_title=f"{pair_label} | Landing premium con scroll inmersivo | Tu Cambio",
-        page_description=f"Descubre {pair_label.lower()} en una landing premium con parallax por capas, secciones pinned y acceso beta.",
+        page_title=f"{pair_label} | Conversor de divisas | Tu Cambio",
+        page_description=f"Calcula {pair_label.lower()} al instante con una app sencilla, clara y rapida.",
         canonical_url=canonical_url,
         seo_schema=seo_schema,
         bootstrap_data=bootstrap_data,
