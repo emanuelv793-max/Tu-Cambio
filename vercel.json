@@ -1,5 +1,5 @@
 {
-  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "version": 2,
   "builds": [
     {
       "src": "app.py",
@@ -11,8 +11,5 @@
       "src": "/(.*)",
       "dest": "app.py"
     }
-  ],
-  "env": {
-    "DATABASE_PATH": "/tmp/tu-cambio.db"
-  }
+  ]
 }
