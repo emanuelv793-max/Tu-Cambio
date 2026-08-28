@@ -174,15 +174,18 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
         response.headers["Content-Type"] = "application/xml; charset=utf-8"
         return response
 
-    @app.route("/ads.txt")
+        @app.route("/ads.txt")
     def ads():
         ads_file = Path(app.root_path) / "ads.txt"
         if not ads_file.exists():
             abort(404)
         return send_from_directory(app.root_path, "ads.txt")
 
-    return app
+    @app.route("/google91d8c072ad165708.html")
+    def google_verification():
+        return "google-site-verification: google91d8c072ad165708.html", 200, {"Content-Type": "text/html"}
 
+    return app
 
 def render_pair_page(base_currency: str, quote_currency: str, canonical_home: bool = False):
     initial_amount = 1.0
