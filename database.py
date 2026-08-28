@@ -1,14 +1,36 @@
 from __future__ import annotations
 
+import os
 import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator
 
 
+def _resolve_connection_path(database_path: str | Path) -> Path:
+    target = Path(database_path)
+    try:
+        if target.parent:
+            target.parent.mkdir(parents=True, exist_ok=True)
+        return target
+    except (OSError, PermissionError):
+        fallback = Path("/tmp") / target.name
+        try:
+            fallback.parent.mkdir(parents=True, exist_ok=True)
+        except Exception:
+            pass
+        return fallback
+
+
 @contextmanager
 def get_connection(database_path: str | Path) -> Iterator[sqlite3.Connection]:
-    connection = sqlite3.connect(str(database_path))
+    resolved_path = _resolve_connection_path(database_path)
+    try:
+        connection = sqlite3.connect(str(resolved_path))
+    except sqlite3.OperationalError:
+        fallback_path = Path("/tmp") / Path(database_path).name
+        connection = sqlite3.connect(str(fallback_path))
+
     connection.row_factory = sqlite3.Row
     try:
         yield connection
