@@ -31,7 +31,7 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
     app = Flask(__name__)
     app.config.from_mapping(
         APP_NAME="Tu Cambio",
-        DATABASE_PATH=Path(os.environ.get("DATABASE_PATH", "historial.db")),
+        DATABASE_PATH=Path(os.environ.get("DATABASE_PATH", "/tmp/historial.db" if os.environ.get("VERCEL") else "historial.db")),
         RATE_CACHE_TTL_SECONDS=int(os.environ.get("RATE_CACHE_TTL_SECONDS", "900")),
         RATE_REQUEST_TIMEOUT_SECONDS=float(os.environ.get("RATE_REQUEST_TIMEOUT_SECONDS", "5")),
         HISTORY_LIMIT=DEFAULT_HISTORY_LIMIT,
