@@ -104,6 +104,15 @@ class TuCambioAppTests(unittest.TestCase):
         self.assertEqual(second_response.status_code, 200)
         self.assertIn("Ya estabas", second_response.get_json()["message"])
 
+    def test_google_verification_route(self):
+        response = self.client.get("/google91d8c072ad165708.html")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"google-site-verification: google91d8c072ad165708.html", response.data)
+
+    def test_ads_txt_route(self):
+        response = self.client.get("/ads.txt")
+        self.assertEqual(response.status_code, 200)
+
 
 if __name__ == "__main__":
     unittest.main()
