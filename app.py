@@ -27,11 +27,24 @@ WHOLE_NUMBER_CURRENCIES = {"JPY", "PYG", "VES"}
 DEFAULT_HISTORY_LIMIT = 6
 
 
+def resolve_database_path() -> Path:
+    if "DATABASE_PATH" in os.environ:
+        return Path(os.environ["DATABASE_PATH"])
+    if (
+        os.environ.get("VERCEL")
+        or os.environ.get("VERCEL_ENV")
+        or os.environ.get("AWS_LAMBDA_FUNCTION_NAME")
+        or os.environ.get("LAMBDA_TASK_ROOT")
+    ):
+        return Path("/tmp/tu-cambio.db")
+    return Path(__file__).resolve().parent / "historial.db"
+
+
 def create_app(test_config: dict[str, Any] | None = None) -> Flask:
     app = Flask(__name__)
     app.config.from_mapping(
         APP_NAME="Tu Cambio",
-        DATABASE_PATH=Path(os.environ.get("DATABASE_PATH", "/tmp/historial.db" if os.environ.get("VERCEL") else "historial.db")),
+        DATABASE_PATH=resolve_database_path(),
         RATE_CACHE_TTL_SECONDS=int(os.environ.get("RATE_CACHE_TTL_SECONDS", "900")),
         RATE_REQUEST_TIMEOUT_SECONDS=float(os.environ.get("RATE_REQUEST_TIMEOUT_SECONDS", "5")),
         HISTORY_LIMIT=DEFAULT_HISTORY_LIMIT,
@@ -174,7 +187,7 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
         response.headers["Content-Type"] = "application/xml; charset=utf-8"
         return response
 
-        @app.route("/ads.txt")
+    @app.route("/ads.txt")
     def ads():
         ads_file = Path(app.root_path) / "ads.txt"
         if not ads_file.exists():
