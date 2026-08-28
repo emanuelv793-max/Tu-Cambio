@@ -514,6 +514,8 @@ def is_valid_email(email: str) -> bool:
 
 
 app = create_app()
+handler = app
+application = app
 
 
 if __name__ == "__main__":
