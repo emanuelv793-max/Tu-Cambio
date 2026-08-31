@@ -5,8 +5,13 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{{ page_title }}</title>
   <meta name="description" content="{{ page_description }}">
+  <meta name="robots" content="{{ robots_content }}">
+  <meta name="application-name" content="{{ app_name }}">
+  <meta name="format-detection" content="telephone=no">
   <meta name="theme-color" content="#f97316">
   <link rel="canonical" href="{{ canonical_url }}">
+  <link rel="alternate" hreflang="es" href="{{ canonical_url }}">
+  <link rel="alternate" hreflang="x-default" href="{{ canonical_url }}">
   <link rel="manifest" href="{{ url_for('static', filename='manifest.webmanifest') }}">
   <link rel="icon" href="{{ url_for('static', filename='icon.svg') }}" type="image/svg+xml">
   <link rel="apple-touch-icon" href="{{ url_for('static', filename='icon.svg') }}">
@@ -15,19 +20,61 @@
   <meta property="og:description" content="{{ page_description }}">
   <meta property="og:url" content="{{ canonical_url }}">
   <meta property="og:site_name" content="{{ app_name }}">
+  <meta property="og:locale" content="es_ES">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="{{ page_title }}">
   <meta name="twitter:description" content="{{ page_description }}">
   <script type="application/ld+json">{{ seo_schema | tojson }}</script>
   <link rel="stylesheet" href="{{ frontend_css_url }}">
+  <link rel="modulepreload" href="{{ frontend_js_url }}">
 </head>
 <body>
-  <div id="root"></div>
+  <div id="root">
+    <div class="app-shell server-fallback">
+      <header class="site-header">
+        <a href="/" class="brand" aria-label="Tu Cambio, inicio"><span>TC</span>{{ app_name }}</a>
+        <nav class="top-nav" aria-label="Navegación principal">
+          <a href="#calculadora">Calculadora</a>
+          <a href="#como-funciona">Cómo funciona</a>
+          <a href="#preguntas">Preguntas</a>
+        </nav>
+      </header>
+      <main>
+        <section class="converter-card fallback-card" id="calculadora">
+          <p class="eyebrow">Tipo de cambio de referencia</p>
+          <h1>{{ seo_content.heading }}</h1>
+          <p>{{ seo_content.intro }}</p>
+          <p class="loading-copy">Cargando la calculadora interactiva…</p>
+        </section>
+        <section class="info-section fallback-info" id="como-funciona">
+          <div>
+            <p class="eyebrow">Cálculo transparente</p>
+            <h2>Convierte {{ base_currency }} a {{ quote_currency }} en tres pasos</h2>
+            <p>Introduce una cantidad, elige las dos monedas y revisa tanto el resultado como la tasa y su fecha de actualización.</p>
+          </div>
+          <div class="quick-link-list" aria-label="Conversiones populares">
+            {% for pair in quick_pairs %}
+            <a href="{{ pair.href }}">{{ pair.description }} <span>{{ pair.label }}</span></a>
+            {% endfor %}
+          </div>
+        </section>
+        <section class="content-section" id="preguntas">
+          <p class="eyebrow">Preguntas frecuentes</p>
+          <h2>Lo que conviene saber antes de cambiar dinero</h2>
+          <div class="faq-grid">
+            {% for item in seo_content.faqItems %}
+            <article><h3>{{ item.question }}</h3><p>{{ item.answer }}</p></article>
+            {% endfor %}
+          </div>
+        </section>
+      </main>
+    </div>
+  </div>
   <noscript>
     <main style="max-width:960px;margin:0 auto;padding:40px 20px;font-family:system-ui,sans-serif;color:#351303;">
       <h1>{{ app_name }}</h1>
       <p>{{ page_description }}</p>
-      <p>Activa JavaScript para usar el conversor.</p>
+      <p>Activa JavaScript para usar la calculadora interactiva. La información sobre el par de monedas permanece disponible en esta página.</p>
     </main>
   </noscript>
   <script id="bootstrap-data" type="application/json">{{ bootstrap_data | tojson }}</script>

@@ -7,7 +7,11 @@ from rate_service import RateQuote
 
 
 class FakeRateService:
+    def __init__(self):
+        self.calls = []
+
     def get_rate(self, base_currency, quote_currency):
+        self.calls.append((base_currency, quote_currency))
         rates = {
             ("EUR", "USD"): 1.2,
             ("USD", "MXN"): 17.1,
@@ -32,11 +36,12 @@ class TuCambioAppTests(unittest.TestCase):
     def setUp(self):
         self.temp_dir = tempfile.TemporaryDirectory()
         database_path = Path(self.temp_dir.name) / "test.db"
+        self.rate_service = FakeRateService()
         self.app = create_app(
             {
                 "TESTING": True,
                 "DATABASE_PATH": database_path,
-                "RATE_SERVICE": FakeRateService(),
+                "RATE_SERVICE": self.rate_service,
             }
         )
         self.client = self.app.test_client()
@@ -50,6 +55,10 @@ class TuCambioAppTests(unittest.TestCase):
         self.assertIn(b"Tu Cambio", response.data)
         self.assertIn(b'id="root"', response.data)
         self.assertIn(b"bootstrap-data", response.data)
+        self.assertIn(b"Conversor de divisas y tipos de cambio", response.data)
+        self.assertIn(b"FAQPage", response.data)
+        self.assertIn(b"rel=\"canonical\" href=\"https://tu-cambio.vercel.app/\"", response.data)
+        self.assertEqual(self.rate_service.calls, [], "La portada no debe bloquearse esperando una API externa")
 
     def test_pair_page_renders(self):
         response = self.client.get("/cambio/usd-mxn")
@@ -57,6 +66,20 @@ class TuCambioAppTests(unittest.TestCase):
         self.assertIn(b"USD", response.data)
         self.assertIn(b"MXN", response.data)
         self.assertIn(b'"pairSlug": "usd-mxn"', response.data)
+        self.assertIn(b"Convertir d\xc3\xb3lar estadounidense a peso mexicano", response.data)
+        self.assertIn(b"BreadcrumbList", response.data)
+
+    def test_sitemap_uses_production_canonicals_and_selected_pairs(self):
+        response = self.client.get("/sitemap.xml")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"https://tu-cambio.vercel.app/cambio/usd-mxn", response.data)
+        self.assertNotIn(b"localhost", response.data)
+        self.assertLess(response.data.count(b"<url>"), 150)
+
+    def test_robots_blocks_action_endpoints(self):
+        response = self.client.get("/robots.txt")
+        self.assertIn(b"Disallow: /convertir", response.data)
+        self.assertIn(b"Sitemap: https://tu-cambio.vercel.app/sitemap.xml", response.data)
 
     def test_convert_endpoint_returns_payload(self):
         response = self.client.post(
@@ -71,6 +94,10 @@ class TuCambioAppTests(unittest.TestCase):
         payload = response.get_json()
         self.assertEqual(payload["converted_amount_display"], "120.00")
         self.assertEqual(payload["rate_display"], "1.200000")
+
+        history_response = self.client.get("/historial")
+        self.assertEqual(history_response.status_code, 200)
+        self.assertEqual(history_response.get_json()[0]["base_currency"], "EUR")
 
     def test_convert_endpoint_rejects_invalid_currency(self):
         response = self.client.post(

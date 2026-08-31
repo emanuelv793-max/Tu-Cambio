@@ -1,4 +1,4 @@
-const CACHE_NAME = "tu-cambio-v4";
+const CACHE_NAME = "tu-cambio-v5";
 const CORE_ASSETS = [
   "/",
   "/static/app-dist/assets/app.css",

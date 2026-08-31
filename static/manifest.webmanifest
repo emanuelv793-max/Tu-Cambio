@@ -6,7 +6,7 @@
   "display": "standalone",
   "background_color": "#fff8f3",
   "theme_color": "#f97316",
-  "description": "Conversor de divisas con estilo moderno, parallax, URLs por par e historial local.",
+  "description": "Conversor gratuito de más de 30 monedas con tipos de cambio de referencia y páginas por cada par popular.",
   "icons": [
     {
       "src": "/static/icon.svg",

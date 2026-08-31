@@ -69,7 +69,7 @@ class RateService:
         return {
             "base_currency": base_currency,
             "rates": payload["rates"],
-            "provider": payload.get("provider", "ExchangeRate-API"),
+            "provider": "ExchangeRate-API",
             "source_url": payload.get("documentation", url),
             "last_updated": payload.get("time_last_update_utc"),
             "next_update": payload.get("time_next_update_utc"),

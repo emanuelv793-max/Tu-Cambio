@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import math
 import os
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 from xml.etree.ElementTree import Element, SubElement, tostring
@@ -19,12 +19,20 @@ from flask import (
     url_for,
 )
 
-from currencies import CURRENCIES, CURRENCY_INDEX, DEFAULT_BASE_CURRENCY, DEFAULT_QUOTE_CURRENCY, FEATURED_PAIRS
+from currencies import (
+    CURRENCIES,
+    CURRENCY_INDEX,
+    DEFAULT_BASE_CURRENCY,
+    DEFAULT_QUOTE_CURRENCY,
+    FEATURED_PAIRS,
+    INDEXABLE_PAIRS,
+)
 from database import fetch_recent_history, init_db, record_conversion, register_alert_subscription
 from rate_service import RateQuote, RateService
 
-WHOLE_NUMBER_CURRENCIES = {"JPY", "PYG", "VES"}
+WHOLE_NUMBER_CURRENCIES = {"JPY", "KRW", "PYG", "VES"}
 DEFAULT_HISTORY_LIMIT = 6
+DEFAULT_PUBLIC_BASE_URL = "https://tu-cambio.vercel.app"
 
 
 def resolve_database_path() -> Path:
@@ -44,6 +52,7 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
     app = Flask(__name__)
     app.config.from_mapping(
         APP_NAME="Tu Cambio",
+        PUBLIC_BASE_URL=os.environ.get("PUBLIC_BASE_URL", DEFAULT_PUBLIC_BASE_URL).rstrip("/"),
         DATABASE_PATH=resolve_database_path(),
         RATE_CACHE_TTL_SECONDS=int(os.environ.get("RATE_CACHE_TTL_SECONDS", "900")),
         RATE_REQUEST_TIMEOUT_SECONDS=float(os.environ.get("RATE_REQUEST_TIMEOUT_SECONDS", "5")),
@@ -68,6 +77,10 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
         response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
         response.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
         response.headers.setdefault("Permissions-Policy", "geolocation=(), camera=(), microphone=()")
+        if request.method == "GET" and request.endpoint in {"home", "pair_page", "sitemap", "robots"}:
+            response.headers.setdefault("Cache-Control", "public, s-maxage=3600, stale-while-revalidate=86400")
+        elif request.method != "GET" or request.endpoint in {"convert", "history", "subscribe_alerts"}:
+            response.headers.setdefault("Cache-Control", "no-store")
         if request.path.startswith("/static/"):
             response.headers.setdefault("Cache-Control", "public, max-age=86400")
         return response
@@ -154,8 +167,15 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
 
     @app.route("/robots.txt")
     def robots():
-        sitemap_url = url_for("sitemap", _external=True)
-        response = make_response(f"User-agent: *\nAllow: /\nSitemap: {sitemap_url}\n")
+        sitemap_url = public_url("/sitemap.xml")
+        response = make_response(
+            "User-agent: *\n"
+            "Allow: /\n"
+            "Disallow: /convertir\n"
+            "Disallow: /historial\n"
+            "Disallow: /suscribirse-alertas\n"
+            f"Sitemap: {sitemap_url}\n"
+        )
         response.headers["Content-Type"] = "text/plain; charset=utf-8"
         return response
 
@@ -164,24 +184,17 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
         namespace = "http://www.sitemaps.org/schemas/sitemap/0.9"
         urlset = Element("urlset", xmlns=namespace)
 
-        urls = [url_for("home", _external=True)]
-        for base_currency in CURRENCIES:
-            for quote_currency in CURRENCIES:
-                if base_currency["code"] == quote_currency["code"]:
-                    continue
-                urls.append(
-                    url_for(
-                        "pair_page",
-                        pair_slug=build_pair_slug(base_currency["code"], quote_currency["code"]),
-                        _external=True,
-                    )
-                )
+        urls = [(public_url("/"), "1.0")]
+        urls.extend(
+            (public_url(url_for("pair_page", pair_slug=build_pair_slug(base, quote))), "0.8")
+            for base, quote in INDEXABLE_PAIRS
+        )
 
-        last_modified = datetime.now(timezone.utc).date().isoformat()
-        for location in urls:
+        for location, priority in urls:
             url_node = SubElement(urlset, "url")
             SubElement(url_node, "loc").text = location
-            SubElement(url_node, "lastmod").text = last_modified
+            SubElement(url_node, "changefreq").text = "daily"
+            SubElement(url_node, "priority").text = priority
 
         response = make_response(tostring(urlset, encoding="unicode"))
         response.headers["Content-Type"] = "application/xml; charset=utf-8"
@@ -194,58 +207,198 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
             abort(404)
         return send_from_directory(app.root_path, "ads.txt")
 
+    @app.route("/favicon.ico")
+    def favicon():
+        return current_app.send_static_file("icon.svg")
+
     @app.route("/google91d8c072ad165708.html")
     def google_verification():
         return "google-site-verification: google91d8c072ad165708.html", 200, {"Content-Type": "text/html"}
 
     return app
 
-def render_pair_page(base_currency: str, quote_currency: str, canonical_home: bool = False):
-    initial_amount = 1.0
-    initial_conversion = build_same_currency_payload(initial_amount, base_currency)
-    if base_currency != quote_currency:
-        rate_quote = resolve_rate_quote(base_currency, quote_currency)
-        if rate_quote is not None:
-            initial_conversion = build_conversion_payload(
-                initial_amount,
-                base_currency,
-                quote_currency,
-                rate_quote,
-            )
 
+def public_url(path: str) -> str:
+    """Build stable canonical URLs even when Vercel serves a preview hostname."""
+    return f"{current_app.config['PUBLIC_BASE_URL']}/{path.lstrip('/')}"
+
+
+def build_seo_content(
+    base_details: dict[str, str],
+    quote_details: dict[str, str],
+    *,
+    canonical_home: bool,
+) -> dict[str, Any]:
+    base_name = base_details["name"]
+    quote_name = quote_details["name"]
+    base_code = base_details["code"]
+    quote_code = quote_details["code"]
+
+    if canonical_home:
+        title = "Conversor de divisas y tipos de cambio | Tu Cambio"
+        description = (
+            "Convierte más de 30 monedas con tipos de cambio de referencia actualizados. "
+            "Calculadora gratis, rápida y clara para viajes, compras y remesas."
+        )
+        heading = "Conversor de divisas rápido y gratuito"
+        intro = (
+            "Calcula cuánto vale una cantidad en otra moneda y consulta la tasa aplicada. "
+            "Elige entre monedas de América, Europa y Asia sin crear una cuenta."
+        )
+    else:
+        title = f"{base_code} a {quote_code}: convertir {base_name} a {quote_name} | Tu Cambio"
+        description = (
+            f"Convierte {base_code} a {quote_code} con la tasa de referencia más reciente. "
+            f"Calculadora gratuita de {base_name} a {quote_name}, fácil y rápida."
+        )
+        heading = f"Convertir {base_name} a {quote_name} ({base_code}/{quote_code})"
+        intro = (
+            f"Usa esta calculadora para estimar el valor de {base_name} en {quote_name}. "
+            f"Escribe cualquier cantidad en {base_code}; el resultado en {quote_code} y la tasa utilizada aparecen automáticamente."
+        )
+
+    faq_items = [
+        {
+            "question": f"¿Cómo convertir {base_code} a {quote_code}?",
+            "answer": (
+                f"Introduce la cantidad en {base_code}, comprueba que {quote_code} sea la moneda de destino "
+                "y la calculadora mostrará el resultado y el tipo de cambio aplicado."
+            ),
+        },
+        {
+            "question": "¿La tasa incluye comisiones bancarias?",
+            "answer": (
+                "No. Mostramos una tasa de referencia del mercado. Tu banco, tarjeta, casa de cambio o plataforma "
+                "de envío puede aplicar un margen, una comisión o una tasa diferente."
+            ),
+        },
+        {
+            "question": "¿Con qué frecuencia se actualiza el tipo de cambio?",
+            "answer": (
+                "La calculadora consulta una fuente externa de referencia y reutiliza temporalmente la última respuesta "
+                "para mantener el servicio rápido. La fecha de actualización se muestra junto al resultado."
+            ),
+        },
+        {
+            "question": f"¿Dónde se usan {base_code} y {quote_code}?",
+            "answer": (
+                f"El {base_name} se utiliza en {base_details['region']}; el {quote_name}, en {quote_details['region']}. "
+                "Comprueba siempre las condiciones del proveedor con el que realizarás la operación."
+            ),
+        },
+    ]
+
+    return {
+        "title": title,
+        "description": description,
+        "heading": heading,
+        "intro": intro,
+        "baseCode": base_code,
+        "quoteCode": quote_code,
+        "baseName": base_name,
+        "quoteName": quote_name,
+        "baseRegion": base_details["region"],
+        "quoteRegion": quote_details["region"],
+        "faqItems": faq_items,
+    }
+
+
+def build_structured_data(
+    *,
+    canonical_url: str,
+    pair_label: str,
+    base_details: dict[str, str],
+    quote_details: dict[str, str],
+    seo_content: dict[str, Any],
+    canonical_home: bool,
+) -> dict[str, Any]:
+    graph: list[dict[str, Any]] = [
+        {
+            "@type": "WebSite",
+            "@id": f"{current_app.config['PUBLIC_BASE_URL']}/#website",
+            "url": f"{current_app.config['PUBLIC_BASE_URL']}/",
+            "name": current_app.config["APP_NAME"],
+            "inLanguage": "es",
+            "description": "Conversor de divisas gratuito con tipos de cambio de referencia.",
+        },
+        {
+            "@type": "WebApplication",
+            "@id": f"{canonical_url}#app",
+            "name": "Tu Cambio",
+            "applicationCategory": "FinanceApplication",
+            "operatingSystem": "Cualquier dispositivo con navegador web",
+            "isAccessibleForFree": True,
+            "inLanguage": "es",
+            "description": seo_content["description"],
+            "url": canonical_url,
+            "offers": {"@type": "Offer", "price": "0", "priceCurrency": "EUR"},
+        },
+        {
+            "@type": "FAQPage",
+            "@id": f"{canonical_url}#faq",
+            "mainEntity": [
+                {
+                    "@type": "Question",
+                    "name": item["question"],
+                    "acceptedAnswer": {"@type": "Answer", "text": item["answer"]},
+                }
+                for item in seo_content["faqItems"]
+            ],
+        },
+    ]
+
+    if not canonical_home:
+        graph.append(
+            {
+                "@type": "BreadcrumbList",
+                "itemListElement": [
+                    {
+                        "@type": "ListItem",
+                        "position": 1,
+                        "name": "Conversor de divisas",
+                        "item": public_url("/"),
+                    },
+                    {
+                        "@type": "ListItem",
+                        "position": 2,
+                        "name": f"{base_details['code']} a {quote_details['code']}",
+                        "item": canonical_url,
+                    },
+                ],
+            }
+        )
+
+    return {"@context": "https://schema.org", "@graph": graph}
+
+
+def render_pair_page(base_currency: str, quote_currency: str, canonical_home: bool = False):
     base_details = get_currency(base_currency)
     quote_details = get_currency(quote_currency)
     pair_label = f"{base_details['name']} a {quote_details['name']}"
-    canonical_url = (
-        url_for(
-            "home" if canonical_home else "pair_page",
-            pair_slug=build_pair_slug(base_currency, quote_currency),
-            _external=True,
-        )
-        if not canonical_home
-        else url_for("home", _external=True)
-    )
+    pair_slug = build_pair_slug(base_currency, quote_currency)
+    canonical_path = "/" if canonical_home else url_for("pair_page", pair_slug=pair_slug)
+    canonical_url = public_url(canonical_path)
+    seo_content = build_seo_content(base_details, quote_details, canonical_home=canonical_home)
     quick_pairs = [
         {
             "label": f"{get_currency(base)['code']} / {get_currency(quote)['code']}",
             "description": f"{get_currency(base)['name']} a {get_currency(quote)['name']}",
             "href": url_for("pair_page", pair_slug=build_pair_slug(base, quote)),
+            "baseCurrency": base,
+            "quoteCurrency": quote,
             "active": base == base_currency and quote == quote_currency,
         }
         for base, quote in FEATURED_PAIRS
     ]
 
-    history_items = get_history_payload()
-
-    seo_schema = {
-        "@context": "https://schema.org",
-        "@type": "WebApplication",
-        "name": "Tu Cambio",
-        "applicationCategory": "FinanceApplication",
-        "operatingSystem": "Any",
-        "description": f"Conversor sencillo para revisar {pair_label.lower()} con tasa actualizada.",
-        "url": canonical_url,
-    }
+    seo_schema = build_structured_data(
+        canonical_url=canonical_url,
+        pair_label=pair_label,
+        base_details=base_details,
+        quote_details=quote_details,
+        seo_content=seo_content,
+        canonical_home=canonical_home,
+    )
 
     bootstrap_data = {
         "appName": current_app.config["APP_NAME"],
@@ -254,35 +407,25 @@ def render_pair_page(base_currency: str, quote_currency: str, canonical_home: bo
             "baseCurrency": base_currency,
             "quoteCurrency": quote_currency,
             "pairLabel": pair_label,
-            "pairSlug": build_pair_slug(base_currency, quote_currency),
+            "pairSlug": pair_slug,
             "baseName": base_details["name"],
             "quoteName": quote_details["name"],
         },
         "liveSnapshot": {
-            "amountDisplay": initial_conversion["amount_display"],
-            "convertedAmountDisplay": initial_conversion["converted_amount_display"],
-            "rateDisplay": initial_conversion["rate_display"],
-            "provider": initial_conversion["provider"],
-            "lastUpdated": initial_conversion["last_updated"],
-            "nextUpdate": initial_conversion["next_update"],
+            "amountDisplay": "1",
+            "convertedAmountDisplay": "—",
+            "rateDisplay": "—",
+            "provider": "Consultando fuente",
+            "lastUpdated": "Calculando…",
+            "nextUpdate": "",
         },
         "quickPairs": quick_pairs,
-        "historyItems": [
-            {
-                "amountDisplay": item["amount_display"],
-                "baseCurrency": item["base_currency"],
-                "quoteCurrency": item["quote_currency"],
-                "convertedAmountDisplay": item["converted_amount_display"],
-                "provider": item["provider"],
-                "createdAt": item["created_at"],
-                "stale": item["stale"],
-            }
-            for item in history_items
-        ],
+        "historyItems": [],
+        "seoContent": seo_content,
         "metrics": {
             "currencies": len(CURRENCIES),
             "featuredPairs": len(FEATURED_PAIRS),
-            "history": len(history_items),
+            "history": 0,
         },
         "historyLimit": current_app.config["HISTORY_LIMIT"],
         "endpoints": {
@@ -296,11 +439,16 @@ def render_pair_page(base_currency: str, quote_currency: str, canonical_home: bo
     return render_template(
         "index.html",
         app_name=current_app.config["APP_NAME"],
-        page_title=f"{pair_label} | Conversor de divisas | Tu Cambio",
-        page_description=f"Calcula {pair_label.lower()} al instante con una app sencilla, clara y rapida.",
+        page_title=seo_content["title"],
+        page_description=seo_content["description"],
         canonical_url=canonical_url,
         seo_schema=seo_schema,
         bootstrap_data=bootstrap_data,
+        seo_content=seo_content,
+        base_currency=base_currency,
+        quote_currency=quote_currency,
+        quick_pairs=quick_pairs,
+        robots_content="index,follow,max-image-preview:large,max-snippet:-1,max-video-preview:-1",
         frontend_css_url=url_for("static", filename="app-dist/assets/app.css"),
         frontend_js_url=url_for("static", filename="app-dist/assets/app.js"),
     )

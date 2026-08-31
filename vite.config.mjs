@@ -5,14 +5,14 @@ import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
 export default defineConfig({
-  root: resolve(__dirname, "frontend"),
+  root: resolve(import.meta.dirname, "frontend"),
   plugins: [react(), tailwindcss()],
   build: {
-    outDir: resolve(__dirname, "static/app-dist"),
+    outDir: resolve(import.meta.dirname, "static/app-dist"),
     emptyOutDir: true,
     cssCodeSplit: false,
     rollupOptions: {
-      input: resolve(__dirname, "frontend/index.html"),
+      input: resolve(import.meta.dirname, "frontend/index.html"),
       output: {
         entryFileNames: "assets/app.js",
         chunkFileNames: "assets/[name].js",

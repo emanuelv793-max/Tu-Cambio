@@ -3,6 +3,7 @@ __pycache__/
 *.log
 *.db
 node_modules/
+.venv/
 output/
 local_server.out
 local_server.err
