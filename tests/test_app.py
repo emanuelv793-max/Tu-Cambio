@@ -57,6 +57,8 @@ class TuCambioAppTests(unittest.TestCase):
         self.assertIn(b"bootstrap-data", response.data)
         self.assertIn(b"Conversor de divisas y tipos de cambio", response.data)
         self.assertIn(b"FAQPage", response.data)
+        self.assertIn(b'google-adsense-account" content="ca-pub-4347223649983931', response.data)
+        self.assertIn(b"pagead2.googlesyndication.com/pagead/js/adsbygoogle.js", response.data)
         self.assertIn(b"rel=\"canonical\" href=\"https://tu-cambio.vercel.app/\"", response.data)
         self.assertEqual(self.rate_service.calls, [], "La portada no debe bloquearse esperando una API externa")
 
@@ -73,6 +75,7 @@ class TuCambioAppTests(unittest.TestCase):
         response = self.client.get("/sitemap.xml")
         self.assertEqual(response.status_code, 200)
         self.assertIn(b"https://tu-cambio.vercel.app/cambio/usd-mxn", response.data)
+        self.assertIn(b"https://tu-cambio.vercel.app/privacidad", response.data)
         self.assertNotIn(b"localhost", response.data)
         self.assertLess(response.data.count(b"<url>"), 150)
 
@@ -139,6 +142,21 @@ class TuCambioAppTests(unittest.TestCase):
     def test_ads_txt_route(self):
         response = self.client.get("/ads.txt")
         self.assertEqual(response.status_code, 200)
+        self.assertIn(b"pub-4347223649983931", response.data)
+
+    def test_monetization_and_trust_pages_render(self):
+        expected_content = {
+            "/privacidad": b"Google AdSense",
+            "/cookies": b"Cookies publicitarias",
+            "/terminos": b"Servicio informativo",
+            "/acerca-de": b"Nuestra metodolog",
+        }
+        for path, expected in expected_content.items():
+            with self.subTest(path=path):
+                response = self.client.get(path)
+                self.assertEqual(response.status_code, 200)
+                self.assertIn(expected, response.data)
+                self.assertIn(b"google-adsense-account", response.data)
 
 
 if __name__ == "__main__":

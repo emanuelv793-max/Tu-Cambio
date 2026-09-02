@@ -33,6 +33,7 @@ from rate_service import RateQuote, RateService
 WHOLE_NUMBER_CURRENCIES = {"JPY", "KRW", "PYG", "VES"}
 DEFAULT_HISTORY_LIMIT = 6
 DEFAULT_PUBLIC_BASE_URL = "https://tu-cambio.vercel.app"
+DEFAULT_ADSENSE_PUBLISHER_ID = "ca-pub-4347223649983931"
 
 
 def resolve_database_path() -> Path:
@@ -53,6 +54,7 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
     app.config.from_mapping(
         APP_NAME="Tu Cambio",
         PUBLIC_BASE_URL=os.environ.get("PUBLIC_BASE_URL", DEFAULT_PUBLIC_BASE_URL).rstrip("/"),
+        ADSENSE_PUBLISHER_ID=os.environ.get("ADSENSE_PUBLISHER_ID", DEFAULT_ADSENSE_PUBLISHER_ID),
         DATABASE_PATH=resolve_database_path(),
         RATE_CACHE_TTL_SECONDS=int(os.environ.get("RATE_CACHE_TTL_SECONDS", "900")),
         RATE_REQUEST_TIMEOUT_SECONDS=float(os.environ.get("RATE_REQUEST_TIMEOUT_SECONDS", "5")),
@@ -77,7 +79,9 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
         response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
         response.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
         response.headers.setdefault("Permissions-Policy", "geolocation=(), camera=(), microphone=()")
-        if request.method == "GET" and request.endpoint in {"home", "pair_page", "sitemap", "robots"}:
+        if request.method == "GET" and request.endpoint in {
+            "home", "pair_page", "sitemap", "robots", "privacy", "cookies", "terms", "about"
+        }:
             response.headers.setdefault("Cache-Control", "public, s-maxage=3600, stale-while-revalidate=86400")
         elif request.method != "GET" or request.endpoint in {"convert", "history", "subscribe_alerts"}:
             response.headers.setdefault("Cache-Control", "no-store")
@@ -165,6 +169,22 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
     def health():
         return jsonify({"status": "ok"})
 
+    @app.route("/privacidad")
+    def privacy():
+        return render_legal_page("privacy")
+
+    @app.route("/cookies")
+    def cookies():
+        return render_legal_page("cookies")
+
+    @app.route("/terminos")
+    def terms():
+        return render_legal_page("terms")
+
+    @app.route("/acerca-de")
+    def about():
+        return render_legal_page("about")
+
     @app.route("/robots.txt")
     def robots():
         sitemap_url = public_url("/sitemap.xml")
@@ -185,6 +205,15 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
         urlset = Element("urlset", xmlns=namespace)
 
         urls = [(public_url("/"), "1.0")]
+        urls.extend(
+            (public_url(path), priority)
+            for path, priority in (
+                ("/acerca-de", "0.5"),
+                ("/privacidad", "0.4"),
+                ("/cookies", "0.3"),
+                ("/terminos", "0.3"),
+            )
+        )
         urls.extend(
             (public_url(url_for("pair_page", pair_slug=build_pair_slug(base, quote))), "0.8")
             for base, quote in INDEXABLE_PAIRS
@@ -221,6 +250,39 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
 def public_url(path: str) -> str:
     """Build stable canonical URLs even when Vercel serves a preview hostname."""
     return f"{current_app.config['PUBLIC_BASE_URL']}/{path.lstrip('/')}"
+
+
+def render_legal_page(page_key: str):
+    pages = {
+        "privacy": {
+            "title": "Política de privacidad | Tu Cambio",
+            "description": "Cómo Tu Cambio trata los datos, las cookies y la publicidad de Google AdSense.",
+        },
+        "cookies": {
+            "title": "Política de cookies | Tu Cambio",
+            "description": "Información sobre cookies, consentimiento y publicidad en Tu Cambio.",
+        },
+        "terms": {
+            "title": "Términos de uso | Tu Cambio",
+            "description": "Condiciones de uso y limitaciones del conversor de divisas Tu Cambio.",
+        },
+        "about": {
+            "title": "Acerca de Tu Cambio | Conversor de divisas",
+            "description": "Conoce el propósito, la metodología y las fuentes del conversor Tu Cambio.",
+        },
+    }
+    page = pages[page_key]
+    canonical_url = public_url(request.path)
+    return render_template(
+        "legal.html",
+        app_name=current_app.config["APP_NAME"],
+        page_key=page_key,
+        page_title=page["title"],
+        page_description=page["description"],
+        canonical_url=canonical_url,
+        adsense_client=current_app.config["ADSENSE_PUBLISHER_ID"],
+        frontend_css_url=url_for("static", filename="app-dist/assets/app.css"),
+    )
 
 
 def build_seo_content(
@@ -422,6 +484,10 @@ def render_pair_page(base_currency: str, quote_currency: str, canonical_home: bo
         "quickPairs": quick_pairs,
         "historyItems": [],
         "seoContent": seo_content,
+        "monetization": {
+            "provider": "Google AdSense",
+            "publisherId": current_app.config["ADSENSE_PUBLISHER_ID"],
+        },
         "metrics": {
             "currencies": len(CURRENCIES),
             "featuredPairs": len(FEATURED_PAIRS),
@@ -449,6 +515,7 @@ def render_pair_page(base_currency: str, quote_currency: str, canonical_home: bo
         quote_currency=quote_currency,
         quick_pairs=quick_pairs,
         robots_content="index,follow,max-image-preview:large,max-snippet:-1,max-video-preview:-1",
+        adsense_client=current_app.config["ADSENSE_PUBLISHER_ID"],
         frontend_css_url=url_for("static", filename="app-dist/assets/app.css"),
         frontend_js_url=url_for("static", filename="app-dist/assets/app.js"),
     )

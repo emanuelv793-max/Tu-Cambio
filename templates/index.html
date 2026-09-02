@@ -7,6 +7,7 @@
   <meta name="description" content="{{ page_description }}">
   <meta name="robots" content="{{ robots_content }}">
   <meta name="application-name" content="{{ app_name }}">
+  <meta name="google-adsense-account" content="{{ adsense_client }}">
   <meta name="format-detection" content="telephone=no">
   <meta name="theme-color" content="#f97316">
   <link rel="canonical" href="{{ canonical_url }}">
@@ -27,6 +28,8 @@
   <script type="application/ld+json">{{ seo_schema | tojson }}</script>
   <link rel="stylesheet" href="{{ frontend_css_url }}">
   <link rel="modulepreload" href="{{ frontend_js_url }}">
+  <link rel="preconnect" href="https://pagead2.googlesyndication.com" crossorigin>
+  <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client={{ adsense_client }}" crossorigin="anonymous"></script>
 </head>
 <body>
   <div id="root">

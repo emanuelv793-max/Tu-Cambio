@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ page_title }}</title>
+  <meta name="description" content="{{ page_description }}">
+  <meta name="robots" content="index,follow,max-snippet:-1">
+  <meta name="google-adsense-account" content="{{ adsense_client }}">
+  <meta name="theme-color" content="#2563eb">
+  <link rel="canonical" href="{{ canonical_url }}">
+  <link rel="icon" href="{{ url_for('static', filename='icon.svg') }}" type="image/svg+xml">
+  <link rel="stylesheet" href="{{ frontend_css_url }}">
+  <link rel="preconnect" href="https://pagead2.googlesyndication.com" crossorigin>
+  <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client={{ adsense_client }}" crossorigin="anonymous"></script>
+</head>
+<body>
+  <div class="app-shell legal-shell">
+    <header class="site-header">
+      <a href="/" class="brand" aria-label="Tu Cambio, inicio"><span>TC</span>{{ app_name }}</a>
+      <nav class="top-nav" aria-label="Navegación legal">
+        <a href="/acerca-de">Acerca de</a>
+        <a href="/privacidad">Privacidad</a>
+        <a href="/cookies">Cookies</a>
+      </nav>
+    </header>
+
+    <main>
+      <article class="content-section legal-content">
+        <p class="eyebrow">Información de Tu Cambio</p>
+
+        {% if page_key == "privacy" %}
+          <h1>Política de privacidad</h1>
+          <p class="legal-updated">Última actualización: 2 de septiembre de 2026</p>
+          <p>Esta política explica qué información trata Tu Cambio, con qué finalidad y qué tecnologías pueden intervenir cuando utilizas el conversor.</p>
+
+          <h2>Información tratada por el servicio</h2>
+          <p>Al realizar una conversión se procesan la cantidad introducida, las monedas seleccionadas, el resultado, la tasa, la fuente y la fecha. El servicio puede conservar temporalmente estos datos técnicos para mostrar conversiones recientes y mantener el funcionamiento de la aplicación. No se requiere una cuenta para usar la calculadora.</p>
+          <p>Si una persona se apunta voluntariamente a una función de alertas, se tratarán el correo facilitado y el par de monedas seleccionado para gestionar esa solicitud.</p>
+
+          <h2>Publicidad de Google</h2>
+          <p>Tu Cambio está preparado para utilizar Google AdSense. Google y otros proveedores publicitarios pueden emplear cookies, balizas web, direcciones IP u otros identificadores para medir, limitar y personalizar anuncios, según el consentimiento y la configuración aplicables.</p>
+          <p>Los proveedores externos, incluido Google, pueden utilizar cookies para mostrar anuncios basados en visitas anteriores a este sitio o a otros sitios. El uso de cookies publicitarias permite a Google y a sus socios seleccionar anuncios para los usuarios.</p>
+          <p>Puedes consultar <a href="https://policies.google.com/technologies/partner-sites?hl=es" rel="noopener noreferrer">cómo utiliza Google la información de sitios asociados</a> y gestionar la personalización en <a href="https://adssettings.google.com/" rel="noopener noreferrer">Configuración de anuncios de Google</a>.</p>
+
+          <h2>Base y finalidad del tratamiento</h2>
+          <p>Los datos técnicos necesarios para responder a una conversión se tratan para prestar el servicio solicitado y proteger su funcionamiento. Las funciones opcionales se basan en la solicitud de la persona usuaria. Las tecnologías publicitarias sujetas a consentimiento se gestionarán mediante una plataforma de consentimiento compatible.</p>
+
+          <h2>Conservación y seguridad</h2>
+          <p>La información se conserva solo durante el tiempo necesario para las finalidades descritas o para cumplir obligaciones aplicables. Se aplican medidas razonables de seguridad, aunque ningún sistema conectado a Internet puede garantizar una protección absoluta.</p>
+
+          <h2>Opciones y derechos</h2>
+          <p>Puedes rechazar o modificar las preferencias publicitarias mediante el mensaje de consentimiento cuando esté disponible. También puedes configurar o borrar cookies desde el navegador. Para consultas sobre el proyecto, utiliza el <a href="https://github.com/emanuelv793-max/Tu-Cambio/issues" rel="noopener noreferrer">canal de contacto del repositorio</a> sin publicar datos sensibles.</p>
+
+        {% elif page_key == "cookies" %}
+          <h1>Política de cookies</h1>
+          <p class="legal-updated">Última actualización: 2 de septiembre de 2026</p>
+          <p>Las cookies y tecnologías similares permiten recordar preferencias, proteger el servicio, medir su funcionamiento y, cuando se autorice, mostrar publicidad.</p>
+
+          <h2>Cookies necesarias</h2>
+          <p>El navegador puede almacenar recursos de la aplicación mediante un service worker para mejorar velocidad y disponibilidad. Estas funciones no se utilizan para crear perfiles publicitarios.</p>
+
+          <h2>Cookies publicitarias</h2>
+          <p>Google AdSense puede utilizar cookies o identificadores para entregar, limitar y medir anuncios, detectar fraude y, si existe consentimiento válido, personalizar publicidad. Estas tecnologías pueden estar asociadas a dominios de Google o DoubleClick.</p>
+
+          <h2>Consentimiento en Europa</h2>
+          <p>Para visitantes del Espacio Económico Europeo, Reino Unido y Suiza, las preferencias publicitarias deben solicitarse mediante una plataforma de gestión del consentimiento certificada por Google e integrada con el marco de transparencia y consentimiento de IAB Europe.</p>
+
+          <h2>Cómo cambiar tus preferencias</h2>
+          <p>Cuando el mensaje de privacidad de Google esté activo, podrás consentir, rechazar o administrar opciones y volver a abrir la configuración posteriormente. También puedes bloquear o eliminar cookies desde los ajustes de tu navegador y revisar la <a href="https://adssettings.google.com/" rel="noopener noreferrer">configuración de anuncios de Google</a>.</p>
+
+        {% elif page_key == "terms" %}
+          <h1>Términos de uso</h1>
+          <p class="legal-updated">Última actualización: 2 de septiembre de 2026</p>
+          <p>Al utilizar Tu Cambio aceptas estas condiciones. Si no estás de acuerdo, no utilices el servicio.</p>
+
+          <h2>Servicio informativo</h2>
+          <p>Las conversiones son estimaciones calculadas con tasas externas de referencia. No constituyen asesoramiento financiero, una cotización vinculante ni una oferta de compra o venta de divisas.</p>
+
+          <h2>Comisiones y diferencias</h2>
+          <p>Bancos, tarjetas, plataformas de pago y casas de cambio pueden aplicar márgenes, redondeos, impuestos o comisiones distintos. Comprueba siempre el importe definitivo con la entidad que procesará la operación.</p>
+
+          <h2>Disponibilidad</h2>
+          <p>Se procura mantener la información disponible y actualizada, pero no se garantiza que el servicio sea ininterrumpido, que todas las tasas estén disponibles ni que carezca de errores. El uso de los resultados es responsabilidad de la persona usuaria.</p>
+
+          <h2>Uso permitido</h2>
+          <p>No está permitido abusar de los endpoints, automatizar solicitudes de forma que degrade el servicio, intentar vulnerar la aplicación ni utilizarla para actividades ilícitas.</p>
+
+        {% elif page_key == "about" %}
+          <h1>Acerca de Tu Cambio</h1>
+          <p>Tu Cambio es un conversor gratuito en español creado para consultar de forma rápida cuánto vale una cantidad en otra moneda.</p>
+
+          <h2>Nuestra metodología</h2>
+          <p>La aplicación consulta una fuente externa de tipos de cambio, muestra la tasa aplicada y su fecha de actualización, y reutiliza temporalmente la última respuesta para ofrecer una experiencia rápida. Las tasas son referencias informativas y no incorporan las comisiones particulares de cada proveedor.</p>
+
+          <h2>Qué ofrece</h2>
+          <p>El servicio admite más de 30 monedas de América, Europa y Asia, proporciona páginas específicas para pares relevantes y no exige registro para utilizar la calculadora.</p>
+
+          <h2>Transparencia</h2>
+          <p>El código y la evolución del proyecto pueden consultarse en <a href="https://github.com/emanuelv793-max/Tu-Cambio" rel="noopener noreferrer">GitHub</a>. Las incidencias técnicas pueden comunicarse mediante el sistema de issues del repositorio.</p>
+        {% endif %}
+      </article>
+    </main>
+
+    <footer class="site-footer">
+      <div><strong>{{ app_name }}</strong><span>Conversor gratuito de tipos de cambio de referencia.</span></div>
+      <nav aria-label="Enlaces legales">
+        <a href="/acerca-de">Acerca de</a>
+        <a href="/privacidad">Privacidad</a>
+        <a href="/cookies">Cookies</a>
+        <a href="/terminos">Términos</a>
+      </nav>
+    </footer>
+  </div>
+</body>
+</html>

@@ -17,6 +17,7 @@ La web queda disponible en `http://127.0.0.1:5000`.
 ## Variables de entorno
 
 - `PUBLIC_BASE_URL`: dominio canónico, por defecto `https://tu-cambio.vercel.app`.
+- `ADSENSE_PUBLISHER_ID`: identificador de AdSense, por defecto `ca-pub-4347223649983931`.
 - `RATE_CACHE_TTL_SECONDS`: duración de la caché de tasas, por defecto 900 segundos.
 - `RATE_REQUEST_TIMEOUT_SECONDS`: tiempo máximo de espera a la fuente, por defecto 5 segundos.
 - `DATABASE_PATH`: ruta opcional para el historial y las suscripciones.
@@ -36,5 +37,11 @@ La web queda disponible en `http://127.0.0.1:5000`.
 npm run build
 python -m unittest discover -s tests -v
 ```
+
+## Monetización con Google AdSense
+
+La web incluye el meta de propiedad, el código de Auto Ads y un `ads.txt` consistente con el publisher ID. También publica páginas de privacidad, cookies, términos y metodología enlazadas desde el pie.
+
+Antes de servir publicidad a visitantes del EEE, Reino Unido o Suiza, configura y publica en **AdSense → Privacidad y mensajes** un mensaje europeo mediante una CMP certificada por Google. Después añade `tu-cambio.vercel.app` en **AdSense → Sitios**, verifica la conexión, solicita la revisión y activa Auto Ads cuando el estado sea **Listo**.
 
 Después de desplegar, envía `https://tu-cambio.vercel.app/sitemap.xml` a Google Search Console y Bing Webmaster Tools. El posicionamiento depende también de autoridad, menciones, enlaces relevantes y contenido editorial; ningún cambio técnico garantiza una posición concreta.

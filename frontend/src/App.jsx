@@ -249,7 +249,16 @@ export default function App({ bootstrap = {} }) {
         <nav className="top-nav" aria-label="Navegación principal"><a href="#calculadora">Calculadora</a><a href="#como-funciona">Cómo funciona</a><a href="#preguntas">Preguntas</a></nav>
       </header>
       <main><Converter bootstrap={bootstrap} /><ValueSection bootstrap={bootstrap} /><SeoContent bootstrap={bootstrap} /></main>
-      <footer className="site-footer"><div><strong>{bootstrap.appName ?? "Tu Cambio"}</strong><span>Conversor gratuito de tipos de cambio de referencia.</span></div><nav aria-label="Enlaces del pie"><a href="/robots.txt">Robots</a><a href="/sitemap.xml">Sitemap</a></nav></footer>
+      <footer className="site-footer">
+        <div><strong>{bootstrap.appName ?? "Tu Cambio"}</strong><span>Conversor gratuito de tipos de cambio de referencia.</span></div>
+        <nav aria-label="Enlaces del pie">
+          <a href="/acerca-de">Acerca de</a>
+          <a href="/privacidad">Privacidad</a>
+          <a href="/cookies">Cookies</a>
+          <a href="/terminos">Términos</a>
+          <a href="/sitemap.xml">Sitemap</a>
+        </nav>
+      </footer>
     </div>
   );
 }
